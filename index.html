@@ -1,0 +1,272 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Fairpicture Opportunity Finder</title>
+    <meta
+      name="description"
+      content="Find humanitarian media and storytelling opportunities from ReliefWeb."
+    />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,700&family=Manrope:wght@400;500;600;700;800&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body data-theme="light" data-view="table">
+    <div class="page-shell">
+      <header class="hero">
+        <div>
+          <p class="eyebrow">Fairpicture Tender Radar</p>
+          <h1>Visual storytelling opportunities</h1>
+        </div>
+      </header>
+
+      <main class="dashboard">
+        <section class="control-panel">
+          <div class="panel-heading">
+            <div>
+              <p class="section-label">Live Feed</p>
+              <h2>Latest opportunities</h2>
+            </div>
+            <span class="status-pill" id="status-pill">
+              <span class="status-pill__spinner" aria-hidden="true"></span>
+              <span class="status-pill__label">Idle</span>
+            </span>
+          </div>
+
+          <div class="panel-actions">
+            <div class="source-strip" aria-label="Integrated sources">
+              <span class="source-chip">ReliefWeb</span>
+              <span class="source-chip">UNDP Procurement</span>
+              <span class="source-chip">UNGM</span>
+              <span class="source-chip">ICIMOD</span>
+            </div>
+            <button id="fetch-button" class="primary-button" type="button">
+              <span class="button-spinner" aria-hidden="true"></span>
+              <span class="button-label">Refresh Results</span>
+            </button>
+          </div>
+        </section>
+
+        <section class="results-card">
+          <div class="results-tabs" role="tablist" aria-label="Opportunity sections">
+            <button
+              id="tab-results"
+              class="tab-button active"
+              type="button"
+              role="tab"
+              aria-selected="true"
+              aria-controls="panel-results"
+            >
+              Live Results
+            </button>
+            <button
+              id="tab-blocked"
+              class="tab-button"
+              type="button"
+              role="tab"
+              aria-selected="false"
+              aria-controls="panel-blocked"
+            >
+              Other Sources
+            </button>
+          </div>
+
+          <div id="panel-results" class="tab-panel" role="tabpanel" aria-labelledby="tab-results">
+          <div class="results-header">
+            <div>
+              <p class="section-label">Current matches</p>
+              <h2>Results</h2>
+            </div>
+            <div class="results-meta">
+              <span id="result-count">0 items</span>
+              <span id="last-updated">Not fetched yet</span>
+            </div>
+          </div>
+
+          <div class="display-controls" aria-label="Display preferences">
+            <div class="display-group" role="group" aria-label="View mode">
+              <button id="view-table" class="display-toggle active" type="button">Table</button>
+              <button id="view-cards" class="display-toggle" type="button">Cards</button>
+            </div>
+
+            <div class="display-group" role="group" aria-label="Theme mode">
+              <button id="theme-light" class="display-toggle active" type="button">Light</button>
+              <button id="theme-dark" class="display-toggle" type="button">Dark</button>
+            </div>
+          </div>
+
+          <div class="table-controls">
+            <label class="table-control table-control--search">
+              <span>Filter table</span>
+              <input
+                id="table-search"
+                type="search"
+                placeholder="Search title, organization, country, or type"
+              />
+            </label>
+
+            <label class="table-control">
+              <span>Filter source</span>
+              <select id="source-filter">
+                <option value="all">All sources</option>
+                <option value="ReliefWeb">ReliefWeb</option>
+                <option value="UNDP Procurement">UNDP Procurement</option>
+                <option value="UNGM">UNGM</option>
+                <option value="ICIMOD">ICIMOD</option>
+              </select>
+            </label>
+
+            <label class="table-control">
+              <span>Sort by</span>
+              <select id="sort-by">
+                <option value="fit-desc">Fit: highest first</option>
+                <option value="deadline-asc">Deadline: earliest first</option>
+                <option value="deadline-desc">Deadline: latest first</option>
+                <option value="title-asc">Title: A to Z</option>
+                <option value="source-asc">Source: A to Z</option>
+              </select>
+            </label>
+          </div>
+
+          <div id="message-box" class="message-box info">
+            Loading the latest opportunities.
+          </div>
+
+          <div id="table-view" class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Fit</th>
+                  <th>Opportunity</th>
+                  <th>Source</th>
+                  <th>Organization</th>
+                  <th>Countries</th>
+                  <th>Deadline</th>
+                  <th>Type</th>
+                  <th>Link</th>
+                </tr>
+              </thead>
+              <tbody id="results-body">
+                <tr class="placeholder-row">
+                  <td colspan="8">No results yet.</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+          <div id="cards-view" class="cards-grid" hidden></div>
+          </div>
+
+          <div
+            id="panel-blocked"
+            class="tab-panel"
+            role="tabpanel"
+            aria-labelledby="tab-blocked"
+            hidden
+          >
+            <div class="results-header">
+              <div>
+                <p class="section-label">Other sources</p>
+                <h2>Not Integrated Yet</h2>
+              </div>
+            </div>
+
+            <div class="blocked-sources">
+              <article class="blocked-source-card">
+                <h3>UNOPS Jobs</h3>
+                <p>
+                  Good source for communications, photography, videography, and retainer-style
+                  roles across UN operations.
+                </p>
+                <p class="cell-subtext">Status: useful manual source</p>
+                <a
+                  class="result-link"
+                  href="https://www.unops.org/jobs"
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  Open source
+                </a>
+              </article>
+
+              <article class="blocked-source-card">
+                <h3>UN Careers</h3>
+                <p>
+                  Broad UN system portal for consultancies, communications, public information,
+                  and multimedia-related postings.
+                </p>
+                <p class="cell-subtext">Status: useful manual source</p>
+                <a
+                  class="result-link"
+                  href="https://careers.un.org/"
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  Open source
+                </a>
+              </article>
+
+              <article class="blocked-source-card">
+                <h3>ILO Jobs</h3>
+                <p>
+                  Relevant for communication and visual-content roles, especially where media,
+                  storytelling, and outreach overlap.
+                </p>
+                <p class="cell-subtext">Status: useful manual source</p>
+                <a
+                  class="result-link"
+                  href="https://jobs.ilo.org/"
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  Open source
+                </a>
+              </article>
+
+              <article class="blocked-source-card">
+                <h3>WHO Procurement</h3>
+                <p>
+                  Useful procurement reference point. WHO tenders often route through UNGM, but
+                  this page is still useful for supplier guidance and discovery.
+                </p>
+                <p class="cell-subtext">Status: useful manual source</p>
+                <a
+                  class="result-link"
+                  href="https://www.who.int/redirect-pages/footer/about-us/procurement"
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  Open source
+                </a>
+              </article>
+
+              <article class="blocked-source-card">
+                <h3>UNICEF Careers</h3>
+                <p>
+                  The public jobs site is currently protected by AWS WAF challenge pages for
+                  server-side requests, so the Vercel backend cannot fetch it reliably.
+                </p>
+                <p class="cell-subtext">Status: blocked by anti-bot protection</p>
+                <a
+                  class="result-link"
+                  href="https://jobs.unicef.org/careers/"
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  Open source
+                </a>
+              </article>
+            </div>
+          </div>
+        </section>
+      </main>
+    </div>
+
+    <script src="./app.js?v=20260326-2"></script>
+  </body>
+</html>
