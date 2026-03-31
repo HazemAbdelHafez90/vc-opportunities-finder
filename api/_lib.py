@@ -40,7 +40,7 @@ DEFAULT_KEYWORDS = [
     "content production",
     "visual storytelling",
 ]
-MANAGED_SOURCES = ["ReliefWeb", "UNDP Procurement", "UNGM", "ICIMOD"]
+MANAGED_SOURCES = ["ReliefWeb", "UNDP Procurement", "UNGM", "UNGM - UNESCO", "UNGM - UN Women", "ICIMOD"]
 RUNNING_SYNC_STALE_MINUTES = 15
 
 DEFAULT_HEADERS = {
@@ -172,10 +172,29 @@ def get_open_opportunities_from_db(limit: int = 200) -> list[dict[str, Any]]:
         query={
             "select": (
                 "id,source,source_item_id,title,organization,countries,deadline,type,link,"
-                "fit_score,fit_label,fit_reasons,status,first_seen_at,last_seen_at,last_synced_at"
+                "fit_score,fit_label,fit_reasons,action_status,action_notes,action_taken_at,"
+                "status,first_seen_at,last_seen_at,last_synced_at"
             ),
             "status": "eq.open",
             "order": "fit_score.desc,deadline.asc.nullslast,last_seen_at.desc",
+            "limit": str(limit),
+        },
+    ) or []
+    return [serialize_opportunity_row(row) for row in rows]
+
+
+def get_managed_opportunities_from_db(limit: int = 400) -> list[dict[str, Any]]:
+    rows = supabase_request(
+        "GET",
+        "opportunities",
+        query={
+            "select": (
+                "id,source,source_item_id,title,organization,countries,deadline,type,link,"
+                "fit_score,fit_label,fit_reasons,action_status,action_notes,action_taken_at,"
+                "status,first_seen_at,last_seen_at,last_synced_at"
+            ),
+            "source": in_filter(MANAGED_SOURCES),
+            "order": "status.asc,action_taken_at.desc.nullslast,fit_score.desc,deadline.asc.nullslast,last_seen_at.desc",
             "limit": str(limit),
         },
     ) or []
@@ -192,7 +211,12 @@ def get_latest_sync_run() -> dict[str, Any] | None:
             "limit": "1",
         },
     ) or []
-    return rows[0] if rows else None
+    if not rows:
+        return None
+
+    row = rows[0]
+    row["source_results"] = get_sync_run_source_rows(row.get("id"))
+    return row
 
 
 def get_active_sync_run() -> dict[str, Any] | None:
@@ -247,7 +271,83 @@ def update_sync_run(sync_run_id: str, values: dict[str, Any]) -> dict[str, Any] 
         payload=values,
         prefer="return=representation",
     ) or []
-    return rows[0] if rows else None
+    if not rows:
+        return None
+
+    row = rows[0]
+    row["source_results"] = get_sync_run_source_rows(row.get("id"))
+    return row
+
+
+def get_sync_run_source_rows(sync_run_id: str | None) -> list[dict[str, Any]]:
+    if not sync_run_id:
+        return []
+
+    try:
+        rows = supabase_request(
+            "GET",
+            "sync_run_sources",
+            query={
+                "select": "source,status,item_count,error_message,finished_at",
+                "sync_run_id": f"eq.{sync_run_id}",
+                "order": "finished_at.asc",
+            },
+        ) or []
+    except RuntimeError as exc:
+        if is_missing_sync_run_sources_table(exc):
+            return []
+        raise
+    return [serialize_sync_source_row(row) for row in rows]
+
+
+def replace_sync_run_source_rows(sync_run_id: str, source_results: list[dict[str, Any]]) -> None:
+    try:
+        supabase_request(
+            "DELETE",
+            "sync_run_sources",
+            query={"sync_run_id": f"eq.{sync_run_id}"},
+            prefer="return=minimal",
+        )
+    except RuntimeError as exc:
+        if is_missing_sync_run_sources_table(exc):
+            return
+        raise
+
+    if not source_results:
+        return
+
+    payload = [
+        {
+            "sync_run_id": sync_run_id,
+            "source": result.get("source") or "Unknown source",
+            "status": result.get("status") or "failed",
+            "item_count": result.get("itemCount") or 0,
+            "error_message": result.get("errorMessage"),
+            "finished_at": result.get("finishedAt") or datetime.now(timezone.utc).isoformat(),
+        }
+        for result in source_results
+    ]
+    try:
+        supabase_request(
+            "POST",
+            "sync_run_sources",
+            payload=payload,
+            prefer="return=minimal",
+        )
+    except RuntimeError as exc:
+        if is_missing_sync_run_sources_table(exc):
+            return
+        raise
+
+
+def serialize_sync_source_row(row: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "source": row.get("source") or "Unknown source",
+        "status": row.get("status") or "failed",
+        "itemCount": row.get("item_count") or 0,
+        "errorMessage": row.get("error_message"),
+        "finishedAt": row.get("finished_at"),
+    }
 
 
 def serialize_sync_run(row: dict[str, Any] | None) -> dict[str, Any]:
@@ -257,6 +357,7 @@ def serialize_sync_run(row: dict[str, Any] | None) -> dict[str, Any]:
             "lastSyncedAt": None,
             "status": "never",
             "sources": MANAGED_SOURCES,
+            "sourceResults": [],
         }
 
     return {
@@ -268,18 +369,21 @@ def serialize_sync_run(row: dict[str, Any] | None) -> dict[str, Any]:
         "newCount": row.get("new_count") or 0,
         "updatedCount": row.get("updated_count") or 0,
         "errorLog": row.get("error_log"),
+        "sourceResults": row.get("source_results") or [],
     }
 
 
-def run_refresh_sync() -> dict[str, Any]:
+def run_refresh_sync(*, triggered_by: str = "manual") -> dict[str, Any]:
     active_sync = get_active_sync_run()
     if active_sync:
         raise RuntimeError("A refresh is already running. Please wait a moment and try again.")
 
-    sync_run = create_sync_run(MANAGED_SOURCES)
+    sync_run = create_sync_run(MANAGED_SOURCES, triggered_by=triggered_by)
+
+    source_results: list[dict[str, Any]] = []
 
     try:
-        live_items = fetch_live_items(DEFAULT_APPNAME, DEFAULT_KEYWORDS)
+        live_items, source_results = fetch_live_items(DEFAULT_APPNAME, DEFAULT_KEYWORDS)
         now_iso = datetime.now(timezone.utc).isoformat()
         open_rows = [to_db_row(item, now_iso) for item in live_items]
         existing_rows = get_existing_rows()
@@ -308,24 +412,40 @@ def run_refresh_sync() -> dict[str, Any]:
 
         expire_old_rows(now_iso)
 
+        replace_sync_run_source_rows(sync_run["id"], source_results)
+
+        failed_sources = [result for result in source_results if result.get("status") == "failed"]
+        completed_sources = [result for result in source_results if result.get("status") == "completed"]
+        overall_status = "failed" if failed_sources and not completed_sources else "completed"
+        error_log = (
+            "; ".join(
+                f"{result.get('source')}: {result.get('errorMessage') or 'Unknown error'}"
+                for result in failed_sources
+            )
+            or None
+        )
+
         finished = update_sync_run(
             sync_run["id"],
             {
-                "status": "completed",
+                "status": overall_status,
                 "finished_at": now_iso,
                 "new_count": new_count,
                 "updated_count": updated_count,
-                "error_log": None,
+                "error_log": error_log,
             },
         )
 
         return {
-            "items": get_open_opportunities_from_db(),
+            "items": get_managed_opportunities_from_db(),
             "sync": serialize_sync_run(finished),
             "newCount": new_count,
             "updatedCount": updated_count,
+            "sources": source_results,
         }
     except Exception as exc:
+        if source_results:
+            replace_sync_run_source_rows(sync_run["id"], source_results)
         update_sync_run(
             sync_run["id"],
             {
@@ -391,9 +511,58 @@ def serialize_opportunity_row(row: dict[str, Any]) -> dict[str, Any]:
         "fitScore": row.get("fit_score") or 0,
         "fitLabel": row.get("fit_label") or "Low fit",
         "fitReasons": row.get("fit_reasons") or [],
+        "actionStatus": row.get("action_status"),
+        "actionNotes": row.get("action_notes") or "",
+        "actionTakenAt": row.get("action_taken_at"),
         "status": row.get("status") or "open",
         "lastSyncedAt": row.get("last_synced_at"),
     }
+
+
+def update_opportunity_action(
+    opportunity_id: str,
+    action_status: str | None,
+    action_notes: str | None = None,
+) -> dict[str, Any] | None:
+    rows = supabase_request(
+        "PATCH",
+        "opportunities",
+        query={
+            "id": f"eq.{opportunity_id}",
+            "select": (
+                "id,source,source_item_id,title,organization,countries,deadline,type,link,"
+                "fit_score,fit_label,fit_reasons,action_status,action_notes,action_taken_at,"
+                "status,first_seen_at,last_seen_at,last_synced_at"
+            ),
+        },
+        payload={
+            "action_status": action_status or None,
+            "action_notes": compact_space(action_notes) or None,
+            "action_taken_at": datetime.now(timezone.utc).isoformat() if action_status else None,
+        },
+        prefer="return=representation",
+    ) or []
+    return serialize_opportunity_row(rows[0]) if rows else None
+
+
+def clear_managed_opportunity_actions() -> int:
+    rows = supabase_request(
+        "PATCH",
+        "opportunities",
+        query={
+            "source": in_filter(MANAGED_SOURCES),
+            "status": "eq.open",
+            "action_status": "not.is.null",
+            "select": "id",
+        },
+        payload={
+            "action_status": None,
+            "action_notes": None,
+            "action_taken_at": None,
+        },
+        prefer="return=representation",
+    ) or []
+    return len(rows)
 
 
 def to_db_row(item: dict[str, Any], synced_at: str) -> dict[str, Any]:
@@ -436,15 +605,95 @@ def in_filter(values: list[str], *, quote: bool = True) -> str:
     return f"in.({','.join(serialized)})"
 
 
-def fetch_live_items(appname: str, keywords: list[str]) -> list[dict[str, Any]]:
-    items = []
-    items.extend(fetch_undp_procurement(keywords))
-    items.extend(fetch_ungm_notices(keywords))
-    items.extend(fetch_icimod_announcements(keywords))
+def fetch_live_items(appname: str, keywords: list[str]) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    items: list[dict[str, Any]] = []
+    source_results: list[dict[str, Any]] = []
+    source_configs = [
+        ("UNDP Procurement", fetch_undp_procurement, (keywords,), {}),
+        ("UNGM", fetch_ungm_notices, (keywords,), {}),
+        (
+            "UNGM - UNESCO",
+            fetch_ungm_agency_notices,
+            ("UNESCO", keywords),
+            {"source_label": "UNGM - UNESCO"},
+        ),
+        (
+            "UNGM - UN Women",
+            fetch_ungm_agency_notices,
+            ("UN-Women", keywords),
+            {"source_label": "UNGM - UN Women"},
+        ),
+        ("ICIMOD", fetch_icimod_announcements, (keywords,), {}),
+    ]
+
     if appname:
-        items.extend(fetch_reliefweb_jobs(appname, keywords))
+        source_configs.append(("ReliefWeb", fetch_reliefweb_jobs, (appname, keywords), {}))
+    else:
+        source_results.append(
+            build_source_result(
+                "ReliefWeb",
+                status="skipped",
+                item_count=0,
+                error_message="Skipped because no ReliefWeb appname was configured.",
+            )
+        )
+
+    for source_name, fetcher, args, kwargs in source_configs:
+        result = fetch_source_safely(source_name, fetcher, *args, **kwargs)
+        items.extend(result.pop("items", []))
+        source_results.append(result)
+
     items.sort(key=sort_key)
-    return items
+    return items, source_results
+
+
+def fetch_source_safely(source_name: str, fetcher, *args, **kwargs) -> dict[str, Any]:
+    try:
+        items = fetcher(*args, **kwargs) or []
+        return {
+            **build_source_result(source_name, status="completed", item_count=len(items), error_message=None),
+            "items": items,
+        }
+    except Exception as exc:
+        print(f"[refresh] Source fetch failed for {source_name}: {exc}")
+        return {
+            **build_source_result(
+                source_name,
+                status="failed",
+                item_count=0,
+                error_message=summarize_source_error(exc),
+            ),
+            "items": [],
+        }
+
+
+def build_source_result(
+    source_name: str,
+    *,
+    status: str,
+    item_count: int,
+    error_message: str | None,
+) -> dict[str, Any]:
+    return {
+        "source": source_name,
+        "status": status,
+        "itemCount": item_count,
+        "errorMessage": error_message,
+        "finishedAt": datetime.now(timezone.utc).isoformat(),
+    }
+
+
+def summarize_source_error(exc: Exception) -> str:
+    summary = compact_space(html_to_text(str(exc)))
+    if not summary:
+        return "Source fetch failed."
+    if len(summary) > 140:
+        return f"{summary[:137].rstrip()}..."
+    return summary
+
+
+def is_missing_sync_run_sources_table(exc: Exception) -> bool:
+    return "sync_run_sources" in str(exc).lower()
 
 
 def fetch_reliefweb_jobs(appname: str, keywords: list[str]) -> list[dict]:
@@ -588,6 +837,53 @@ def fetch_ungm_notices(keywords: list[str]) -> list[dict]:
     return list(deduped.values())
 
 
+def fetch_ungm_agency_notices(
+    agency: str, keywords: list[str], *, source_label: str | None = None
+) -> list[dict]:
+    payload = {
+        "PageIndex": 0,
+        "PageSize": 20,
+        "Title": "",
+        "Description": "",
+        "Reference": "",
+        "PublishedFrom": "",
+        "PublishedTo": "",
+        "DeadlineFrom": "",
+        "DeadlineTo": "",
+        "Countries": [],
+        "Agencies": [agency],
+        "UNSPSCs": [],
+        "NoticeTypes": [],
+        "SortField": "Deadline",
+        "SortAscending": True,
+        "isPicker": False,
+        "IsSustainable": False,
+        "IsActive": True,
+        "NoticeDisplayType": "",
+        "NoticeSearchTotalLabelId": "noticeSearchTotal",
+        "TypeOfCompetitions": [],
+    }
+    html = request_text(UNGM_SEARCH_URL, data=json.dumps(payload).encode("utf-8"))
+    if is_ungm_error_page(html):
+        raise RuntimeError(f"UNGM returned an internal error page for agency filter: {agency}")
+    soup = BeautifulSoup(html, "html.parser")
+
+    items = []
+    for row in soup.select("div.tableRow.dataRow.notice-table"):
+        record = parse_ungm_row(row)
+        if not record:
+            continue
+        if not is_open_deadline(record["deadline"]):
+            continue
+        if not matches_keywords(record, keywords):
+            continue
+
+        record["source"] = source_label or f"UNGM - {agency}"
+        items.append(record)
+
+    return items
+
+
 def fetch_icimod_announcements(keywords: list[str]) -> list[dict]:
     search_terms = list(dict.fromkeys(keywords[:5] or ["videography"]))
     deduped = {}
@@ -638,6 +934,11 @@ def fetch_icimod_announcements(keywords: list[str]) -> list[dict]:
             deduped[record["link"]] = record
 
     return list(deduped.values())
+
+
+def is_ungm_error_page(html: str) -> bool:
+    text = normalize_match_text(html)
+    return "internal server error" in text and "ungm" in text
 
 
 def parse_ungm_row(row) -> dict | None:
@@ -742,7 +1043,7 @@ def get_fit_analysis(opportunity: dict[str, Any]) -> dict[str, Any]:
     if countries:
         score += 5
         reasons.append("Country or regional scope is specified")
-    if source in {"ungm", "undp procurement", "reliefweb"}:
+    if source.startswith("ungm") or source in {"undp procurement", "reliefweb"}:
         score += 6
         reasons.append("Source is one of the main procurement-focused channels")
     if any(term in haystack for term in noisy_terms):

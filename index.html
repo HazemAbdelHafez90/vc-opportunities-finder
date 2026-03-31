@@ -11,26 +11,46 @@
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
-      href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,700&family=Manrope:wght@400;500;600;700;800&display=swap"
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Noto+Serif:wght@400;500;700&display=swap"
       rel="stylesheet"
     />
-    <link rel="stylesheet" href="./styles.css" />
-  </head>
-  <body data-theme="light" data-view="table">
-    <div class="page-shell">
-      <header class="hero">
-        <div>
-          <p class="eyebrow">Fairpicture Tender Radar</p>
-          <h1>Visual storytelling opportunities</h1>
-        </div>
-      </header>
+    <style>
+      html {
+        background: #f4f1ef;
+      }
 
+      html[data-theme="dark"] {
+        background: #0c0e12;
+      }
+    </style>
+    <link rel="stylesheet" href="./styles.css" />
+    <script>
+      (function() {
+        try {
+          var theme = localStorage.getItem("fairpicture-opportunities-theme");
+          var view = localStorage.getItem("fairpicture-opportunities-view");
+          document.documentElement.dataset.theme = theme === "dark" ? "dark" : "light";
+          document.documentElement.dataset.view = view === "cards" ? "cards" : "table";
+          document.documentElement.style.colorScheme = theme === "dark" ? "dark" : "light";
+        } catch (error) {
+          document.documentElement.dataset.theme = "light";
+          document.documentElement.dataset.view = "table";
+          document.documentElement.style.colorScheme = "light";
+        }
+      })();
+    </script>
+  </head>
+  <body>
+    <div class="page-shell">
       <main class="dashboard">
         <section class="control-panel">
           <div class="panel-heading">
             <div>
-              <p class="section-label">Live Feed</p>
+              <p class="section-label">Fairpicture Tender Radar</p>
               <h2>Latest opportunities</h2>
+              <p class="panel-summary">
+                Cached first, refreshed on demand, and ranked for Fairpicture-style assignments.
+              </p>
             </div>
             <span class="status-pill" id="status-pill">
               <span class="status-pill__spinner" aria-hidden="true"></span>
@@ -43,6 +63,8 @@
               <span class="source-chip">ReliefWeb</span>
               <span class="source-chip">UNDP Procurement</span>
               <span class="source-chip">UNGM</span>
+              <span class="source-chip">UNGM - UNESCO</span>
+              <span class="source-chip">UNGM - UN Women</span>
               <span class="source-chip">ICIMOD</span>
             </div>
             <button id="fetch-button" class="primary-button" type="button">
@@ -65,6 +87,26 @@
               Live Results
             </button>
             <button
+              id="tab-actioned"
+              class="tab-button"
+              type="button"
+              role="tab"
+              aria-selected="false"
+              aria-controls="panel-results"
+            >
+              Action Taken
+            </button>
+            <button
+              id="tab-expired"
+              class="tab-button"
+              type="button"
+              role="tab"
+              aria-selected="false"
+              aria-controls="panel-results"
+            >
+              Expired
+            </button>
+            <button
               id="tab-blocked"
               class="tab-button"
               type="button"
@@ -77,16 +119,20 @@
           </div>
 
           <div id="panel-results" class="tab-panel" role="tabpanel" aria-labelledby="tab-results">
-          <div class="results-header">
-            <div>
-              <p class="section-label">Current matches</p>
-              <h2>Results</h2>
+            <div class="results-header">
+              <div>
+                <p id="results-section-label" class="section-label">Current matches</p>
+                <h2 id="results-title">Results</h2>
+                <p id="results-summary" class="panel-summary">
+                  Prioritized for visual storytelling, production, and procurement relevance.
+                </p>
+              </div>
+              <div class="results-meta">
+                <span id="result-count">0 items</span>
+                <span id="last-updated">Not fetched yet</span>
+                <div id="source-health" class="source-health" hidden></div>
+              </div>
             </div>
-            <div class="results-meta">
-              <span id="result-count">0 items</span>
-              <span id="last-updated">Not fetched yet</span>
-            </div>
-          </div>
 
           <div class="display-controls" aria-label="Display preferences">
             <div class="display-group" role="group" aria-label="View mode">
@@ -117,6 +163,8 @@
                 <option value="ReliefWeb">ReliefWeb</option>
                 <option value="UNDP Procurement">UNDP Procurement</option>
                 <option value="UNGM">UNGM</option>
+                <option value="UNGM - UNESCO">UNGM - UNESCO</option>
+                <option value="UNGM - UN Women">UNGM - UN Women</option>
                 <option value="ICIMOD">ICIMOD</option>
               </select>
             </label>
@@ -144,19 +192,26 @@
                   <th>Fit</th>
                   <th>Opportunity</th>
                   <th>Source</th>
-                  <th>Organization</th>
-                  <th>Countries</th>
                   <th>Deadline</th>
-                  <th>Type</th>
+                  <th>Status</th>
                   <th>Link</th>
                 </tr>
               </thead>
               <tbody id="results-body">
                 <tr class="placeholder-row">
-                  <td colspan="8">No results yet.</td>
+                  <td colspan="6">No results yet.</td>
                 </tr>
               </tbody>
             </table>
+          </div>
+
+          <div id="table-pagination" class="table-pagination" hidden>
+            <p id="pagination-summary" class="pagination-summary">Showing 0-0 of 0</p>
+            <div class="pagination-actions">
+              <button id="pagination-prev" class="pagination-button" type="button">Previous</button>
+              <span id="pagination-page" class="pagination-page">Page 1 of 1</span>
+              <button id="pagination-next" class="pagination-button" type="button">Next</button>
+            </div>
           </div>
 
           <div id="cards-view" class="cards-grid" hidden></div>
@@ -173,6 +228,9 @@
               <div>
                 <p class="section-label">Other sources</p>
                 <h2>Not Integrated Yet</h2>
+                <p class="panel-summary">
+                  Manual or unstable sources kept visible without blending them into the live feed.
+                </p>
               </div>
             </div>
 
@@ -267,6 +325,97 @@
       </main>
     </div>
 
-    <script src="./app.js?v=20260326-2"></script>
+    <div id="detail-modal" class="detail-modal" hidden>
+      <div id="detail-backdrop" class="detail-modal__backdrop"></div>
+      <aside
+        class="detail-modal__panel"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="detail-title"
+      >
+        <div class="detail-modal__header">
+          <div>
+            <p id="detail-kicker" class="section-label">Opportunity detail</p>
+            <h3 id="detail-title">Opportunity</h3>
+          </div>
+          <button id="detail-close" class="detail-close" type="button" aria-label="Close details">
+            Close
+          </button>
+        </div>
+
+        <div class="detail-modal__body">
+          <div class="detail-modal__summary">
+            <span id="detail-fit" class="fit-score fit-score--medium">
+              <strong>0%</strong>
+              <span>Fit</span>
+            </span>
+            <span id="detail-source" class="type-tag">Source</span>
+          </div>
+
+          <dl class="detail-modal__meta">
+            <div>
+              <dt>Organization</dt>
+              <dd id="detail-organization">—</dd>
+            </div>
+            <div>
+              <dt>Countries</dt>
+              <dd id="detail-countries">—</dd>
+            </div>
+            <div>
+              <dt>Deadline</dt>
+              <dd id="detail-deadline">—</dd>
+            </div>
+            <div>
+              <dt>Type</dt>
+              <dd id="detail-type">—</dd>
+            </div>
+            <div>
+              <dt>Status</dt>
+              <dd id="detail-status">Live</dd>
+            </div>
+            <div>
+              <dt>Current notes</dt>
+              <dd id="detail-existing-notes">No notes yet.</dd>
+            </div>
+          </dl>
+
+          <div class="detail-modal__actions">
+            <label class="detail-form-field">
+              <span>Ops notes</span>
+              <textarea
+                id="detail-notes"
+                rows="5"
+                placeholder="Add why this was applied, not relevant, or not interesting."
+              ></textarea>
+            </label>
+
+            <p id="detail-action-help" class="cell-subtext">
+              Notes are required for Applied, Not interested, and Not relevant.
+            </p>
+
+            <div class="detail-modal__buttons">
+              <button id="detail-action-applied" class="primary-button primary-button--small" type="button">
+                Mark Applied
+              </button>
+              <button id="detail-action-not-interested" class="mini-action-button" type="button">
+                Not interested
+              </button>
+              <button id="detail-action-not-relevant" class="mini-action-button" type="button">
+                Not relevant
+              </button>
+              <button id="detail-action-reset" class="mini-action-button mini-action-button--secondary" type="button">
+                Return to live
+              </button>
+            </div>
+
+            <a id="detail-link" class="result-link" href="#" target="_blank" rel="noreferrer">
+              Open posting
+            </a>
+          </div>
+        </div>
+      </aside>
+    </div>
+
+    <script src="./app.js?v=20260331-7"></script>
   </body>
 </html>

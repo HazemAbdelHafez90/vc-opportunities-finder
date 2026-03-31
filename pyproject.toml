@@ -1,0 +1,8 @@
+[project]
+name = "vc-opportunities-finder"
+version = "0.1.0"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+  "certifi>=2024.0.0",
+  "beautifulsoup4>=4.12.0",
+]

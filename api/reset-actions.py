@@ -3,17 +3,14 @@ from __future__ import annotations
 import json
 from http.server import BaseHTTPRequestHandler
 
-from api._lib import get_latest_sync_run, serialize_sync_run
+from api._lib import clear_managed_opportunity_actions
 
 
 class handler(BaseHTTPRequestHandler):
-    def do_GET(self):
+    def do_POST(self):
         try:
-            sync = serialize_sync_run(get_latest_sync_run())
-            self.write_json(
-                {"sync": sync, "sources": sync.get("sourceResults") or []},
-                cache_control="public, s-maxage=60, stale-while-revalidate=300",
-            )
+            cleared_count = clear_managed_opportunity_actions()
+            self.write_json({"clearedCount": cleared_count}, cache_control="no-store")
         except Exception as exc:  # pragma: no cover
             self.write_json({"error": str(exc)}, status=502, cache_control="no-store")
 
