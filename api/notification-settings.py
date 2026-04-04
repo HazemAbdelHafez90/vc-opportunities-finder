@@ -3,19 +3,26 @@ from __future__ import annotations
 import json
 from http.server import BaseHTTPRequestHandler
 
-from api._lib import get_latest_sync_run, serialize_sync_run
+from api._lib import get_notification_settings, save_notification_settings
 
 
 class handler(BaseHTTPRequestHandler):
     def do_GET(self):
         try:
-            sync = serialize_sync_run(get_latest_sync_run())
+            self.write_json({"settings": get_notification_settings()}, cache_control="no-store")
+        except Exception as exc:  # pragma: no cover
+            self.write_json({"error": str(exc)}, status=502, cache_control="no-store")
+
+    def do_POST(self):
+        try:
+            content_length = int(self.headers.get("Content-Length", "0"))
+            payload = json.loads(self.rfile.read(content_length) or b"{}")
             self.write_json(
-                {"sync": sync, "sources": sync.get("sourceResults") or []},
+                {"settings": save_notification_settings(payload)},
                 cache_control="no-store",
             )
         except Exception as exc:  # pragma: no cover
-            self.write_json({"error": str(exc)}, status=502, cache_control="no-store")
+            self.write_json({"error": str(exc)}, status=400, cache_control="no-store")
 
     def write_json(self, payload: dict, status: int = 200, cache_control: str = "no-store"):
         body = json.dumps(payload).encode("utf-8")

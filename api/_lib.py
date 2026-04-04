@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import re
 import ssl
 from datetime import date, datetime, timezone
 from typing import Any
@@ -40,8 +41,18 @@ DEFAULT_KEYWORDS = [
     "content production",
     "visual storytelling",
 ]
-MANAGED_SOURCES = ["ReliefWeb", "UNDP Procurement", "UNGM", "UNGM - UNESCO", "UNGM - UN Women", "ICIMOD"]
+MANAGED_SOURCES = ["ReliefWeb", "UNDP Procurement", "UNGM", "ICIMOD"]
 RUNNING_SYNC_STALE_MINUTES = 15
+POSTMARK_API_URL = "https://api.postmarkapp.com/email"
+DEFAULT_NOTIFICATION_SETTINGS = {
+    "enabled": True,
+    "newTenderEnabled": True,
+    "expiryAlertEnabled": True,
+    "recipientEmails": [],
+    "senderName": "",
+    "senderEmail": "",
+    "expiryAlertDays": 2,
+}
 
 DEFAULT_HEADERS = {
     "User-Agent": (
@@ -217,6 +228,124 @@ def get_latest_sync_run() -> dict[str, Any] | None:
     row = rows[0]
     row["source_results"] = get_sync_run_source_rows(row.get("id"))
     return row
+
+
+def get_notification_settings() -> dict[str, Any]:
+    rows = supabase_request(
+        "GET",
+        "notification_settings",
+        query={
+            "select": (
+                "enabled,new_tender_enabled,expiry_alert_enabled,recipient_emails,"
+                "sender_name,sender_email,expiry_alert_days"
+            ),
+            "id": "eq.true",
+            "limit": "1",
+        },
+    ) or []
+    if not rows:
+        return dict(DEFAULT_NOTIFICATION_SETTINGS)
+    return serialize_notification_settings_row(rows[0])
+
+
+def save_notification_settings(payload: dict[str, Any]) -> dict[str, Any]:
+    recipient_emails = normalize_recipient_emails(payload.get("recipientEmails") or [])
+    sender_email = compact_space(payload.get("senderEmail"))
+    if sender_email and not is_valid_email(sender_email):
+        raise RuntimeError("Sender email must be a valid email address.")
+    if payload.get("recipientEmails") and not recipient_emails:
+        raise RuntimeError("Add at least one valid recipient email.")
+
+    rows = supabase_request(
+        "POST",
+        "notification_settings",
+        query={"on_conflict": "id"},
+        payload=[
+            {
+                "id": True,
+                "enabled": bool(payload.get("enabled", True)),
+                "new_tender_enabled": bool(payload.get("newTenderEnabled", True)),
+                "expiry_alert_enabled": bool(payload.get("expiryAlertEnabled", True)),
+                "recipient_emails": recipient_emails,
+                "sender_name": payload.get("senderName") or None,
+                "sender_email": sender_email or None,
+                "expiry_alert_days": normalize_expiry_alert_days(payload.get("expiryAlertDays")),
+            }
+        ],
+        prefer="resolution=merge-duplicates,return=representation",
+    ) or []
+    if not rows:
+        raise RuntimeError("Could not save notification settings.")
+    return serialize_notification_settings_row(rows[0])
+
+
+def serialize_notification_settings_row(row: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "enabled": bool(row.get("enabled", True)),
+        "newTenderEnabled": bool(row.get("new_tender_enabled", True)),
+        "expiryAlertEnabled": bool(row.get("expiry_alert_enabled", True)),
+        "recipientEmails": normalize_recipient_emails(row.get("recipient_emails") or []),
+        "senderName": compact_space(row.get("sender_name")),
+        "senderEmail": compact_space(row.get("sender_email")),
+        "expiryAlertDays": normalize_expiry_alert_days(row.get("expiry_alert_days")),
+    }
+
+
+def send_test_notification_email() -> dict[str, Any]:
+    settings = get_notification_settings()
+    recipients = settings["recipientEmails"]
+    if not recipients:
+        raise RuntimeError("Add at least one recipient email before testing notifications.")
+
+    postmark_token = compact_space(os.getenv("POSTMARK_SERVER_TOKEN"))
+    sender_email = compact_space(settings.get("senderEmail") or os.getenv("POSTMARK_FROM_EMAIL"))
+    sender_name = compact_space(settings.get("senderName") or os.getenv("POSTMARK_FROM_NAME"))
+
+    if not postmark_token:
+        raise RuntimeError("POSTMARK_SERVER_TOKEN is not configured.")
+    if not sender_email:
+        raise RuntimeError("No sender email is configured.")
+
+    expiry_days = settings["expiryAlertDays"]
+    sample_row = {
+        "title": "Test tender notification from Fairpicture Tender Radar",
+        "source": "Manual test",
+        "organization": "Fairpicture",
+        "deadline": (datetime.now(timezone.utc).date()).isoformat(),
+        "fit_label": "High fit",
+        "fit_score": 88,
+        "link": "",
+    }
+
+    send_postmark_email(
+        subject="[Tender Radar] Test notification",
+        html_body=(
+            build_notification_email_html(
+                "Notification test",
+                (
+                    "This is a manual test email from Fairpicture Tender Radar. "
+                    f"Your expiry alert threshold is currently {expiry_days} day{'s' if expiry_days != 1 else ''}."
+                ),
+                [sample_row],
+                tone="warning",
+            )
+        ),
+        text_body=(
+            "Notification test\n\n"
+            "This is a manual test email from Fairpicture Tender Radar.\n"
+            f"Expiry alert threshold: {expiry_days} day{'s' if expiry_days != 1 else ''}.\n\n"
+            f"{build_notification_item_text(sample_row)}"
+        ),
+        recipients=recipients,
+        sender=format_sender(sender_email, sender_name),
+        postmark_token=postmark_token,
+    )
+
+    return {
+        "recipientCount": len(recipients),
+        "expiryAlertDays": expiry_days,
+        "message": "Test notification email sent.",
+    }
 
 
 def get_active_sync_run() -> dict[str, Any] | None:
@@ -401,16 +530,33 @@ def run_refresh_sync(*, triggered_by: str = "manual") -> dict[str, Any]:
             else:
                 new_count += 1
 
+        upserted_rows = []
         if open_rows:
-            supabase_request(
+            upserted_rows = supabase_request(
                 "POST",
                 "opportunities",
                 query={"on_conflict": "source,source_item_id"},
                 payload=open_rows,
                 prefer="resolution=merge-duplicates,return=representation",
-            )
+            ) or []
 
+        backfill_missing_ungm_deadlines(now_iso)
         expire_old_rows(now_iso)
+        try:
+            notification_summary = send_notifications(
+                upserted_rows=upserted_rows,
+                existing_by_key=existing_by_key,
+                now_iso=now_iso,
+            )
+        except Exception as exc:
+            notification_summary = {
+                "enabled": True,
+                "recipientCount": 0,
+                "expiryAlertDays": get_notification_settings().get("expiryAlertDays", 2),
+                "newTenderSentCount": 0,
+                "expiryAlertSentCount": 0,
+                "skippedReason": f"Notification delivery failed: {compact_space(str(exc)) or 'Unknown error.'}",
+            }
 
         replace_sync_run_source_rows(sync_run["id"], source_results)
 
@@ -442,6 +588,7 @@ def run_refresh_sync(*, triggered_by: str = "manual") -> dict[str, Any]:
             "newCount": new_count,
             "updatedCount": updated_count,
             "sources": source_results,
+            "notifications": notification_summary,
         }
     except Exception as exc:
         if source_results:
@@ -462,10 +609,56 @@ def get_existing_rows() -> list[dict[str, Any]]:
         "GET",
         "opportunities",
         query={
-            "select": "id,source,source_item_id,status,deadline,first_seen_at",
+            "select": (
+                "id,source,source_item_id,status,deadline,first_seen_at,new_notification_sent_at,"
+                "expiry_notification_sent_at,expiry_notification_sent_days,title,organization,countries,"
+                "type,link,fit_score,fit_label,fit_reasons,action_status,action_notes,action_taken_at,"
+                "last_synced_at"
+            ),
             "source": in_filter(MANAGED_SOURCES),
         },
     ) or []
+
+
+def get_ungm_rows_missing_deadline(limit: int = 50) -> list[dict[str, Any]]:
+    return supabase_request(
+        "GET",
+        "opportunities",
+        query={
+            "select": "id,source,title,link,deadline,status",
+            "source": in_filter(["UNGM"]),
+            "deadline": "is.null",
+            "limit": str(limit),
+            "order": "last_seen_at.desc",
+        },
+    ) or []
+
+
+def backfill_missing_ungm_deadlines(now_iso: str) -> int:
+    updated_count = 0
+
+    for row in get_ungm_rows_missing_deadline():
+        deadline = fetch_ungm_deadline_from_notice(row.get("link"))
+        if not deadline:
+            continue
+
+        normalized_deadline = normalize_deadline_for_db(deadline)
+        if not normalized_deadline:
+            continue
+
+        supabase_request(
+            "PATCH",
+            "opportunities",
+            query={"id": f"eq.{row.get('id')}", "select": "id"},
+            payload={
+                "deadline": normalized_deadline,
+                "last_synced_at": now_iso,
+            },
+            prefer="return=minimal",
+        )
+        updated_count += 1
+
+    return updated_count
 
 
 def expire_old_rows(now_iso: str) -> None:
@@ -498,6 +691,388 @@ def expire_old_rows(now_iso: str) -> None:
     )
 
 
+def send_notifications(
+    *,
+    upserted_rows: list[dict[str, Any]],
+    existing_by_key: dict[tuple[Any, Any], dict[str, Any]],
+    now_iso: str,
+) -> dict[str, Any]:
+    settings = get_notification_settings()
+    summary = {
+        "enabled": settings["enabled"],
+        "recipientCount": len(settings["recipientEmails"]),
+        "expiryAlertDays": settings["expiryAlertDays"],
+        "newTenderSentCount": 0,
+        "expiryAlertSentCount": 0,
+        "expiredTenderSentCount": 0,
+        "skippedReason": None,
+    }
+
+    if not settings["enabled"]:
+        summary["skippedReason"] = "Notifications are disabled."
+        return summary
+
+    if not settings["recipientEmails"]:
+        summary["skippedReason"] = "No notification recipient emails are configured."
+        return summary
+
+    postmark_token = compact_space(os.getenv("POSTMARK_SERVER_TOKEN"))
+    sender_email = compact_space(settings.get("senderEmail") or os.getenv("POSTMARK_FROM_EMAIL"))
+    sender_name = compact_space(settings.get("senderName") or os.getenv("POSTMARK_FROM_NAME"))
+
+    if not postmark_token:
+        summary["skippedReason"] = "POSTMARK_SERVER_TOKEN is not configured."
+        return summary
+
+    if not sender_email:
+        summary["skippedReason"] = "No sender email is configured."
+        return summary
+
+    new_rows = get_new_rows_for_notification(upserted_rows, existing_by_key)
+    expiry_rows = get_expiring_rows_for_notification(settings["expiryAlertDays"])
+    expired_rows = get_expired_rows_for_notification()
+
+    sender = format_sender(sender_email, sender_name)
+
+    if settings["newTenderEnabled"] and new_rows:
+        send_postmark_email(
+            subject=f"[Tender Radar] {len(new_rows)} new tender{'s' if len(new_rows) != 1 else ''} found",
+            html_body=build_notification_email_html(
+                "New tenders found",
+                "Fresh opportunities were added during the latest sync.",
+                new_rows,
+                tone="new",
+            ),
+            text_body=build_notification_email_text("New tenders found", new_rows),
+            recipients=settings["recipientEmails"],
+            sender=sender,
+            postmark_token=postmark_token,
+        )
+        mark_notification_sent(
+            [str(row.get("id")) for row in new_rows if row.get("id")],
+            {"new_notification_sent_at": now_iso},
+        )
+        summary["newTenderSentCount"] = len(new_rows)
+
+    if settings["expiryAlertEnabled"] and expiry_rows:
+        send_postmark_email(
+            subject=(
+                f"[Tender Radar] {len(expiry_rows)} tender{'s' if len(expiry_rows) != 1 else ''} "
+                f"expire in {settings['expiryAlertDays']} day{'s' if settings['expiryAlertDays'] != 1 else ''}"
+            ),
+            html_body=build_notification_email_html(
+                f"About to expire in {settings['expiryAlertDays']} day{'s' if settings['expiryAlertDays'] != 1 else ''}",
+                "These tenders are still open, but the deadline is close.",
+                expiry_rows,
+                tone="warning",
+            ),
+            text_body=build_notification_email_text(
+                f"Tenders expiring in {settings['expiryAlertDays']} day{'s' if settings['expiryAlertDays'] != 1 else ''}",
+                expiry_rows,
+            ),
+            recipients=settings["recipientEmails"],
+            sender=sender,
+            postmark_token=postmark_token,
+        )
+        mark_notification_sent(
+            [str(row.get("id")) for row in expiry_rows if row.get("id")],
+            {
+                "expiry_notification_sent_at": now_iso,
+                "expiry_notification_sent_days": settings["expiryAlertDays"],
+            },
+        )
+        summary["expiryAlertSentCount"] = len(expiry_rows)
+
+    if settings["expiryAlertEnabled"] and expired_rows:
+        send_postmark_email(
+            subject=f"[Tender Radar] {len(expired_rows)} tender{'s' if len(expired_rows) != 1 else ''} expired",
+            html_body=build_notification_email_html(
+                "Expired tenders",
+                "These tenders have just moved out of the live queue.",
+                expired_rows,
+                tone="expired",
+            ),
+            text_body=build_notification_email_text("Expired tenders", expired_rows),
+            recipients=settings["recipientEmails"],
+            sender=sender,
+            postmark_token=postmark_token,
+        )
+        mark_notification_sent(
+            [str(row.get("id")) for row in expired_rows if row.get("id")],
+            {"expired_notification_sent_at": now_iso},
+        )
+        summary["expiredTenderSentCount"] = len(expired_rows)
+
+    if (
+        summary["newTenderSentCount"] == 0
+        and summary["expiryAlertSentCount"] == 0
+        and summary["expiredTenderSentCount"] == 0
+    ):
+        summary["skippedReason"] = "No new, expiring, or expired tenders matched the current notification rules."
+
+    return summary
+
+
+def get_new_rows_for_notification(
+    upserted_rows: list[dict[str, Any]],
+    existing_by_key: dict[tuple[Any, Any], dict[str, Any]],
+) -> list[dict[str, Any]]:
+    results = []
+    for row in upserted_rows:
+        key = (row.get("source"), row.get("source_item_id"))
+        existing = existing_by_key.get(key)
+        if existing:
+            continue
+        if row.get("new_notification_sent_at"):
+            continue
+        results.append(row)
+    return results
+
+
+def get_expiring_rows_for_notification(expiry_alert_days: int) -> list[dict[str, Any]]:
+    rows = supabase_request(
+        "GET",
+        "opportunities",
+        query={
+            "select": (
+                "id,source,source_item_id,title,organization,countries,deadline,type,link,"
+                "fit_score,fit_label,fit_reasons,action_status,action_notes,action_taken_at,status,"
+                "first_seen_at,last_seen_at,last_synced_at,expiry_notification_sent_at,expiry_notification_sent_days"
+            ),
+            "status": "eq.open",
+            "action_status": "is.null",
+            "source": in_filter(MANAGED_SOURCES),
+            "order": "deadline.asc.nullslast,fit_score.desc",
+            "limit": "200",
+        },
+    ) or []
+
+    matches = []
+    today = date.today()
+    for row in rows:
+        parsed = parse_date(row.get("deadline"))
+        if not parsed:
+            continue
+        days_until_deadline = (parsed.date() - today).days
+        if days_until_deadline != expiry_alert_days:
+            continue
+        if row.get("expiry_notification_sent_days") == expiry_alert_days:
+            continue
+        matches.append(row)
+    return matches
+
+
+def get_expired_rows_for_notification() -> list[dict[str, Any]]:
+    rows = supabase_request(
+        "GET",
+        "opportunities",
+        query={
+            "select": (
+                "id,source,source_item_id,title,organization,countries,deadline,type,link,"
+                "fit_score,fit_label,fit_reasons,action_status,action_notes,action_taken_at,status,"
+                "first_seen_at,last_seen_at,last_synced_at,expired_notification_sent_at"
+            ),
+            "status": "eq.expired",
+            "expired_notification_sent_at": "is.null",
+            "source": in_filter(MANAGED_SOURCES),
+            "order": "deadline.desc.nullslast,last_synced_at.desc",
+            "limit": "200",
+        },
+    ) or []
+    return rows
+
+
+def mark_notification_sent(opportunity_ids: list[str], values: dict[str, Any]) -> None:
+    if not opportunity_ids:
+        return
+    supabase_request(
+        "PATCH",
+        "opportunities",
+        query={"id": in_filter(opportunity_ids, quote=False)},
+        payload=values,
+        prefer="return=minimal",
+    )
+
+
+def send_postmark_email(
+    *,
+    subject: str,
+    html_body: str,
+    text_body: str,
+    recipients: list[str],
+    sender: str,
+    postmark_token: str,
+) -> None:
+    payload = {
+        "From": sender,
+        "To": ", ".join(recipients),
+        "Subject": subject,
+        "HtmlBody": html_body,
+        "TextBody": text_body,
+        "MessageStream": "outbound",
+    }
+    request_json(
+        POSTMARK_API_URL,
+        data=json.dumps(payload).encode("utf-8"),
+        headers={
+            "Accept": "application/json",
+            "X-Postmark-Server-Token": postmark_token,
+        },
+    )
+
+
+def build_notification_email_html(
+    title: str,
+    intro: str,
+    rows: list[dict[str, Any]],
+    *,
+    tone: str,
+) -> str:
+    palette = {
+        "new": {"accent": "#2c6b58", "pill": "#d9f5eb", "pill_text": "#1e4f40"},
+        "warning": {"accent": "#c54f20", "pill": "#ffe3d6", "pill_text": "#9b3d16"},
+        "expired": {"accent": "#8d3326", "pill": "#f8ddd7", "pill_text": "#7b281d"},
+    }.get(tone, {"accent": "#c92b2f", "pill": "#f8ddd7", "pill_text": "#7b281d"})
+
+    cards = "".join(build_notification_card_html(row, palette["pill"], palette["pill_text"]) for row in rows)
+    return (
+        "<!doctype html><html><body style=\"margin:0;background:#f3efe9;font-family:Arial,sans-serif;color:#17191d;\">"
+        "<div style=\"max-width:880px;margin:0 auto;padding:28px 18px;\">"
+        f"<div style=\"background:#fffaf6;border:1px solid rgba(23,25,29,0.08);border-radius:28px;overflow:hidden;box-shadow:0 24px 48px rgba(15,18,24,0.08);\">"
+        f"<div style=\"padding:28px 28px 18px;background:linear-gradient(135deg,{palette['accent']} 0%,#17191d 100%);color:#fffaf6;\">"
+        "<div style=\"font-size:12px;letter-spacing:0.18em;text-transform:uppercase;font-weight:700;opacity:0.78;\">Fairpicture Tender Radar</div>"
+        f"<h1 style=\"margin:14px 0 10px;font-size:36px;line-height:1.05;\">{escape_html(title)}</h1>"
+        f"<p style=\"margin:0;font-size:18px;line-height:1.6;max-width:44rem;opacity:0.92;\">{escape_html(intro)}</p>"
+        "</div>"
+        "<div style=\"padding:22px 22px 28px;\">"
+        f"<table role=\"presentation\" width=\"100%\" cellspacing=\"0\" cellpadding=\"0\" style=\"border-collapse:separate;border-spacing:0 14px;\">{cards}</table>"
+        "</div></div></div></body></html>"
+    )
+
+
+def build_notification_email_text(title: str, rows: list[dict[str, Any]]) -> str:
+    return f"{title}\n\n" + "\n\n".join(build_notification_item_text(row) for row in rows)
+
+
+def build_notification_card_html(row: dict[str, Any], pill_bg: str, pill_text: str) -> str:
+    title = escape_html(row.get("title") or "Untitled opportunity")
+    source = escape_html(row.get("source") or "Source")
+    organization = escape_html(row.get("organization") or "N/A")
+    deadline = escape_html(format_deadline_label(row.get("deadline")))
+    fit_score = row.get("fit_score") or 0
+    fit_label = escape_html(row.get("fit_label") or "Fit")
+    link = row.get("link") or ""
+    countries = row.get("countries") or []
+    country_label = escape_html(", ".join(countries) if countries else "Global / unspecified")
+    link_html = (
+        f"<a href=\"{escape_html(link)}\" style=\"color:#c92b2f;font-weight:700;text-decoration:none;\">Open posting</a>"
+        if link
+        else "<span style=\"color:#58606b;\">No link provided</span>"
+    )
+    return (
+        "<tr>"
+        "<td style=\"padding:0;\">"
+        "<div style=\"background:#ffffff;border:1px solid rgba(23,25,29,0.08);border-radius:22px;padding:18px 18px 16px;\">"
+        "<table role=\"presentation\" width=\"100%\" cellspacing=\"0\" cellpadding=\"0\" style=\"border-collapse:collapse;\">"
+        "<tr>"
+        f"<td style=\"vertical-align:top;padding-right:14px;\"><div style=\"display:inline-block;padding:8px 12px;border-radius:999px;background:{pill_bg};color:{pill_text};font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:0.08em;\">{source}</div></td>"
+        f"<td style=\"vertical-align:top;text-align:right;color:#58606b;font-size:14px;font-weight:700;\">{deadline}</td>"
+        "</tr>"
+        "</table>"
+        f"<div style=\"padding-top:14px;\"><div style=\"font-size:26px;line-height:1.2;font-weight:700;color:#17191d;\">{title}</div></div>"
+        f"<div style=\"padding-top:10px;color:#58606b;font-size:16px;line-height:1.6;\">{organization} • {country_label}</div>"
+        "<table role=\"presentation\" width=\"100%\" cellspacing=\"0\" cellpadding=\"0\" style=\"border-collapse:collapse;margin-top:16px;\">"
+        "<tr>"
+        f"<td style=\"vertical-align:middle;color:#17191d;font-size:15px;font-weight:700;\">{fit_label} ({fit_score}%)</td>"
+        f"<td style=\"vertical-align:middle;text-align:right;\">{link_html}</td>"
+        "</tr>"
+        "</table>"
+        "</div></td></tr>"
+    )
+
+
+def build_notification_item_html(row: dict[str, Any]) -> str:
+    title = escape_html(row.get("title") or "Untitled opportunity")
+    source = escape_html(row.get("source") or "Source")
+    organization = escape_html(row.get("organization") or "N/A")
+    deadline = escape_html(format_deadline_label(row.get("deadline")))
+    fit_label = escape_html(f"{row.get('fit_label') or 'Fit'} ({row.get('fit_score') or 0}%)")
+    link = escape_html(row.get("link") or "")
+    link_html = f'<a href="{link}">Open posting</a>' if link else "No link provided"
+    return (
+        "<li>"
+        f"<strong>{title}</strong><br>"
+        f"{source} | {organization}<br>"
+        f"Deadline: {deadline} | {fit_label}<br>"
+        f"{link_html}"
+        "</li>"
+    )
+
+
+def build_notification_item_text(row: dict[str, Any]) -> str:
+    lines = [
+        row.get("title") or "Untitled opportunity",
+        f"Source: {row.get('source') or 'Source'}",
+        f"Organization: {row.get('organization') or 'N/A'}",
+        f"Deadline: {format_deadline_label(row.get('deadline'))}",
+        f"Fit: {row.get('fit_label') or 'Fit'} ({row.get('fit_score') or 0}%)",
+    ]
+    if row.get("link"):
+        lines.append(f"Link: {row['link']}")
+    return "\n".join(lines)
+
+
+def format_deadline_label(value: str | None) -> str:
+    parsed = parse_date(value)
+    return parsed.date().isoformat() if parsed else (value or "No deadline listed")
+
+
+def format_sender(sender_email: str, sender_name: str | None) -> str:
+    return f"{sender_name} <{sender_email}>" if sender_name else sender_email
+
+
+def normalize_recipient_emails(value: Any) -> list[str]:
+    if isinstance(value, str):
+        candidates = re.split(r"[\n,;]+", value)
+    elif isinstance(value, list):
+        candidates = value
+    else:
+        candidates = []
+
+    emails = []
+    seen = set()
+    for candidate in candidates:
+        email = compact_space(String(candidate)).lower()
+        if not email or not is_valid_email(email) or email in seen:
+            continue
+        emails.append(email)
+        seen.add(email)
+    return emails
+
+
+def normalize_expiry_alert_days(value: Any) -> int:
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError):
+        return DEFAULT_NOTIFICATION_SETTINGS["expiryAlertDays"]
+    return max(0, min(30, parsed))
+
+
+def is_valid_email(value: str) -> bool:
+    return bool(re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", value))
+
+
+def escape_html(value: str) -> str:
+    return (
+        String(value)
+        .replace("&", "&amp;")
+        .replace("<", "&lt;")
+        .replace(">", "&gt;")
+        .replace('"', "&quot;")
+        .replace("'", "&#39;")
+    )
+
+
 def serialize_opportunity_row(row: dict[str, Any]) -> dict[str, Any]:
     return {
         "id": row.get("id"),
@@ -515,6 +1090,7 @@ def serialize_opportunity_row(row: dict[str, Any]) -> dict[str, Any]:
         "actionNotes": row.get("action_notes") or "",
         "actionTakenAt": row.get("action_taken_at"),
         "status": row.get("status") or "open",
+        "addedAt": row.get("first_seen_at"),
         "lastSyncedAt": row.get("last_synced_at"),
     }
 
@@ -524,6 +1100,9 @@ def update_opportunity_action(
     action_status: str | None,
     action_notes: str | None = None,
 ) -> dict[str, Any] | None:
+    normalized_notes = compact_space(action_notes) or None
+    is_manual_expired = action_status == "expired_manual"
+
     rows = supabase_request(
         "PATCH",
         "opportunities",
@@ -536,9 +1115,12 @@ def update_opportunity_action(
             ),
         },
         payload={
-            "action_status": action_status or None,
-            "action_notes": compact_space(action_notes) or None,
-            "action_taken_at": datetime.now(timezone.utc).isoformat() if action_status else None,
+            "status": "expired" if is_manual_expired else "open",
+            "action_status": None if is_manual_expired else (action_status or None),
+            "action_notes": normalized_notes,
+            "action_taken_at": datetime.now(timezone.utc).isoformat()
+            if (action_status or normalized_notes)
+            else None,
         },
         prefer="return=representation",
     ) or []
@@ -611,18 +1193,6 @@ def fetch_live_items(appname: str, keywords: list[str]) -> tuple[list[dict[str, 
     source_configs = [
         ("UNDP Procurement", fetch_undp_procurement, (keywords,), {}),
         ("UNGM", fetch_ungm_notices, (keywords,), {}),
-        (
-            "UNGM - UNESCO",
-            fetch_ungm_agency_notices,
-            ("UNESCO", keywords),
-            {"source_label": "UNGM - UNESCO"},
-        ),
-        (
-            "UNGM - UN Women",
-            fetch_ungm_agency_notices,
-            ("UN-Women", keywords),
-            {"source_label": "UNGM - UN Women"},
-        ),
         ("ICIMOD", fetch_icimod_announcements, (keywords,), {}),
     ]
 
@@ -964,6 +1534,27 @@ def parse_ungm_row(row) -> dict | None:
     }
 
 
+def fetch_ungm_deadline_from_notice(link: str | None) -> str | None:
+    if not link:
+        return None
+
+    try:
+        html = request_text(link)
+    except RuntimeError:
+        return None
+
+    text = compact_space(BeautifulSoup(html, "html.parser").get_text(" ", strip=True))
+    match = re.search(
+        r"deadline\s+on\s*:\s*([^\n\r]+?)(?:registration\s+level\s*:|published\s+on\s*:|reference\s*:|beneficiary\s+countries|$)",
+        text,
+        flags=re.IGNORECASE,
+    )
+    if not match:
+        return None
+
+    return compact_space(match.group(1))
+
+
 def get_fit_analysis(opportunity: dict[str, Any]) -> dict[str, Any]:
     title = String(opportunity.get("title", "")).lower()
     organization = String(opportunity.get("organization", "")).lower()
@@ -1083,16 +1674,35 @@ def parse_date(value: str | None) -> datetime | None:
     if not value:
         return None
 
-    normalized = value.strip().replace("Z", "+00:00")
+    normalized = compact_space(value).replace("\u2013", "-").replace("\u2014", "-").replace("\u2212", "-")
+    normalized = normalized.replace("Z", "+00:00")
     try:
         parsed = datetime.fromisoformat(normalized)
     except ValueError:
-        for pattern in ("%Y-%m-%d", "%d %b %Y", "%d %B %Y"):
-            try:
-                parsed = datetime.strptime(normalized, pattern)
-                return parsed.replace(tzinfo=timezone.utc)
-            except ValueError:
-                continue
+        candidates = [normalized]
+
+        date_match = re.search(
+            r"\b\d{4}[-/]\d{1,2}[-/]\d{1,2}\b|\b\d{1,2}[-/ ](?:[A-Za-z]{3,9}|\d{1,2})[-/ ]\d{4}\b",
+            normalized,
+        )
+        if date_match:
+            candidates.append(date_match.group(0))
+
+        for candidate in candidates:
+            cleaned_candidate = candidate.strip().replace("/", "-").replace(",", "")
+            for pattern in (
+                "%Y-%m-%d",
+                "%d-%m-%Y",
+                "%d-%b-%Y",
+                "%d-%B-%Y",
+                "%d %b %Y",
+                "%d %B %Y",
+            ):
+                try:
+                    parsed = datetime.strptime(cleaned_candidate, pattern)
+                    return parsed.replace(tzinfo=timezone.utc)
+                except ValueError:
+                    continue
         return None
 
     if parsed.tzinfo is None:
@@ -1147,14 +1757,13 @@ def get_xml_text(item, path: str, namespaces: dict[str, str]) -> str:
 
 
 def parse_ungm_deadline(value: str) -> str:
+    parsed = parse_date(value)
+    if parsed:
+        return parsed.date().isoformat()
+
     cleaned = compact_space(value)
-    for pattern in ("%d-%b-%Y", "%d %b %Y", "%Y-%m-%d"):
-        try:
-            parsed = datetime.strptime(cleaned, pattern)
-            return parsed.date().isoformat()
-        except ValueError:
-            continue
-    return cleaned
+    matched_date = re.search(r"\b\d{1,2}[-/ ](?:[A-Za-z]{3,9}|\d{1,2})[-/ ]\d{4}\b", cleaned)
+    return matched_date.group(0).replace("/", "-") if matched_date else cleaned
 
 
 def to_absolute_ungm_url(value: str) -> str:

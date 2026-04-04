@@ -3,19 +3,18 @@ from __future__ import annotations
 import json
 from http.server import BaseHTTPRequestHandler
 
-from api._lib import get_latest_sync_run, serialize_sync_run
+from api._lib import send_test_notification_email
 
 
 class handler(BaseHTTPRequestHandler):
-    def do_GET(self):
+    def do_POST(self):
         try:
-            sync = serialize_sync_run(get_latest_sync_run())
             self.write_json(
-                {"sync": sync, "sources": sync.get("sourceResults") or []},
+                {"result": send_test_notification_email()},
                 cache_control="no-store",
             )
         except Exception as exc:  # pragma: no cover
-            self.write_json({"error": str(exc)}, status=502, cache_control="no-store")
+            self.write_json({"error": str(exc)}, status=400, cache_control="no-store")
 
     def write_json(self, payload: dict, status: int = 200, cache_control: str = "no-store"):
         body = json.dumps(payload).encode("utf-8")

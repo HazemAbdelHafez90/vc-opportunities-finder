@@ -4,6 +4,17 @@ const resultCount = document.querySelector("#result-count");
 const lastUpdated = document.querySelector("#last-updated");
 const sourceHealth = document.querySelector("#source-health");
 const messageBox = document.querySelector("#message-box");
+const openSettingsButton = document.querySelector("#open-settings");
+const notificationSettingsStatus = document.querySelector("#notification-settings-status");
+const notificationEmails = document.querySelector("#notification-emails");
+const notificationExpiryDays = document.querySelector("#notification-expiry-days");
+const notificationSenderName = document.querySelector("#notification-sender-name");
+const notificationSenderEmail = document.querySelector("#notification-sender-email");
+const notificationEnabled = document.querySelector("#notification-enabled");
+const notificationNewEnabled = document.querySelector("#notification-new-enabled");
+const notificationExpiryEnabled = document.querySelector("#notification-expiry-enabled");
+const notificationSaveButton = document.querySelector("#notification-save");
+const notificationTestButton = document.querySelector("#notification-test");
 const resultsBody = document.querySelector("#results-body");
 const resultsTab = document.querySelector("#tab-results");
 const actionedTab = document.querySelector("#tab-actioned");
@@ -19,6 +30,9 @@ const cardsView = document.querySelector("#cards-view");
 const detailModal = document.querySelector("#detail-modal");
 const detailBackdrop = document.querySelector("#detail-backdrop");
 const detailCloseButton = document.querySelector("#detail-close");
+const settingsModal = document.querySelector("#settings-modal");
+const settingsBackdrop = document.querySelector("#settings-backdrop");
+const settingsCloseButton = document.querySelector("#settings-close");
 const detailTitle = document.querySelector("#detail-title");
 const detailFit = document.querySelector("#detail-fit");
 const detailSource = document.querySelector("#detail-source");
@@ -31,6 +45,7 @@ const detailExistingNotes = document.querySelector("#detail-existing-notes");
 const detailNotes = document.querySelector("#detail-notes");
 const detailLink = document.querySelector("#detail-link");
 const detailActionApplied = document.querySelector("#detail-action-applied");
+const detailActionExpired = document.querySelector("#detail-action-expired");
 const detailActionNotInterested = document.querySelector("#detail-action-not-interested");
 const detailActionNotRelevant = document.querySelector("#detail-action-not-relevant");
 const detailActionReset = document.querySelector("#detail-action-reset");
@@ -46,6 +61,7 @@ const viewTableButton = document.querySelector("#view-table");
 const viewCardsButton = document.querySelector("#view-cards");
 const themeLightButton = document.querySelector("#theme-light");
 const themeDarkButton = document.querySelector("#theme-dark");
+const DISPLAY_SOURCES = ["ReliefWeb", "UNDP Procurement", "UNGM", "ICIMOD"];
 const STORAGE_KEYS = {
   theme: "fairpicture-opportunities-theme",
   view: "fairpicture-opportunities-view",
@@ -56,9 +72,13 @@ let currentTablePage = 1;
 let currentOpportunityTab = "results";
 let selectedOpportunityId = null;
 let activeBucketRequestId = 0;
+let notificationSettings = null;
 const TABLE_PAGE_SIZE = 10;
 
 fetchButton.addEventListener("click", handleFetch);
+openSettingsButton.addEventListener("click", openSettingsModal);
+notificationSaveButton.addEventListener("click", handleSaveNotificationSettings);
+notificationTestButton.addEventListener("click", handleTestNotification);
 resultsTab.addEventListener("click", () => setActiveTab("results"));
 actionedTab.addEventListener("click", () => setActiveTab("actioned"));
 expiredTab.addEventListener("click", () => setActiveTab("expired"));
@@ -67,7 +87,10 @@ resultsBody.addEventListener("click", handleOpportunityListClick);
 cardsView.addEventListener("click", handleOpportunityListClick);
 detailBackdrop.addEventListener("click", closeDetailModal);
 detailCloseButton.addEventListener("click", closeDetailModal);
+settingsBackdrop.addEventListener("click", closeSettingsModal);
+settingsCloseButton.addEventListener("click", closeSettingsModal);
 detailActionApplied.addEventListener("click", () => handleDetailActionSubmit("applied"));
+detailActionExpired.addEventListener("click", () => handleDetailActionSubmit("expired_manual"));
 detailActionNotInterested.addEventListener("click", () => handleDetailActionSubmit("not_interested"));
 detailActionNotRelevant.addEventListener("click", () => handleDetailActionSubmit("not_relevant"));
 detailActionReset.addEventListener("click", () => handleDetailActionSubmit(""));
@@ -90,7 +113,9 @@ sortBy.addEventListener("change", () => {
 paginationPrevButton.addEventListener("click", () => changeTablePage(-1));
 paginationNextButton.addEventListener("click", () => changeTablePage(1));
 window.addEventListener("keydown", (event) => {
-  if (event.key === "Escape" && !detailModal.hidden) {
+  if (event.key === "Escape" && !settingsModal.hidden) {
+    closeSettingsModal();
+  } else if (event.key === "Escape" && !detailModal.hidden) {
     closeDetailModal();
   }
 });
@@ -102,11 +127,16 @@ window.addEventListener("load", () => {
 
 async function loadInitialData() {
   fetchButton.disabled = true;
+  setNotificationSettingsBusy(true, "Loading notification settings.");
   setStatus("Loading...", "loading");
   setMessage("Loading cached opportunities from the database.", "info");
 
   try {
-    const sync = await fetchSyncStatus();
+    const [sync, settings] = await Promise.all([
+      fetchSyncStatus(),
+      fetchNotificationSettings(),
+    ]);
+    applyNotificationSettings(settings);
     updateSyncMeta(sync);
     debugLog("loadInitialData:sync", { currentOpportunityTab, sync });
     await reloadOpportunitiesFromApi();
@@ -118,6 +148,7 @@ async function loadInitialData() {
     setMessage(error.message || "Could not load cached opportunities.", "error");
     setStatus("Error", "error");
   } finally {
+    setNotificationSettingsBusy(false);
     fetchButton.disabled = false;
   }
 }
@@ -136,13 +167,14 @@ async function handleFetch() {
       await reloadOpportunitiesFromApi({ preserveMessage: true });
     }
     updateSyncMeta(refreshResponse?.sync || null, refreshResponse?.sources || null);
+    const notificationMessage = getNotificationSummaryMessage(refreshResponse?.notifications || null);
     const failedSourceCount = Array.isArray(refreshResponse?.sources)
       ? refreshResponse.sources.filter((source) => source?.status === "failed").length
       : 0;
     setMessage(
       failedSourceCount
-        ? `Refresh completed with ${failedSourceCount} source issue${failedSourceCount === 1 ? "" : "s"}. ${refreshResponse?.newCount || 0} new and ${refreshResponse?.updatedCount || 0} updated opportunities.`
-        : `Refresh completed. ${refreshResponse?.newCount || 0} new and ${refreshResponse?.updatedCount || 0} updated opportunities.`,
+        ? `Refresh completed with ${failedSourceCount} source issue${failedSourceCount === 1 ? "" : "s"}. ${refreshResponse?.newCount || 0} new and ${refreshResponse?.updatedCount || 0} updated opportunities. ${notificationMessage}`
+        : `Refresh completed. ${refreshResponse?.newCount || 0} new and ${refreshResponse?.updatedCount || 0} updated opportunities. ${notificationMessage}`,
       failedSourceCount ? "info" : "success"
     );
     setStatus(failedSourceCount ? "Partial" : "Updated", "success");
@@ -187,7 +219,9 @@ async function fetchOpportunities(options = {}) {
 }
 
 async function fetchSyncStatus() {
-  const response = await fetch("/api/sync-status");
+  const url = new URL("/api/sync-status", window.location.origin);
+  url.searchParams.set("ts", String(Date.now()));
+  const response = await fetch(url.toString(), { cache: "no-store" });
   const responseData = await response.json().catch(() => null);
 
   if (!response.ok) {
@@ -195,6 +229,47 @@ async function fetchSyncStatus() {
   }
 
   return responseData?.sync || null;
+}
+
+async function fetchNotificationSettings() {
+  const url = new URL("/api/notification-settings", window.location.origin);
+  url.searchParams.set("ts", String(Date.now()));
+  const response = await fetch(url.toString(), { cache: "no-store" });
+  const responseData = await response.json().catch(() => null);
+
+  if (!response.ok) {
+    throw new Error(responseData?.error || "Could not load notification settings.");
+  }
+
+  return responseData?.settings || null;
+}
+
+async function saveNotificationSettings(settings) {
+  const response = await fetch("/api/notification-settings", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(settings),
+  });
+  const responseData = await response.json().catch(() => null);
+
+  if (!response.ok) {
+    throw new Error(responseData?.error || "Could not save notification settings.");
+  }
+
+  return responseData?.settings || null;
+}
+
+async function sendTestNotification() {
+  const response = await fetch("/api/test-notification", { method: "POST" });
+  const responseData = await response.json().catch(() => null);
+
+  if (!response.ok) {
+    throw new Error(responseData?.error || "Could not send the test notification.");
+  }
+
+  return responseData?.result || null;
 }
 
 async function refreshOpportunities() {
@@ -422,12 +497,13 @@ function sortOpportunities(opportunities, mode) {
 function renderTable(opportunities) {
   if (opportunities.length === 0) {
     resultsBody.innerHTML =
-      '<tr class="placeholder-row"><td colspan="6">No results to display.</td></tr>';
+      '<tr class="placeholder-row"><td colspan="7">No results to display.</td></tr>';
     return;
   }
 
   resultsBody.innerHTML = opportunities
     .map((opportunity) => {
+      const expiringSoon = isExpiringSoon(opportunity);
       const fitScore = Number.isFinite(opportunity.fitScore) ? opportunity.fitScore : 0;
       const fitLabel = opportunity.fitLabel || getFitLabel(fitScore);
       const fitTone = getFitTone(fitScore);
@@ -441,7 +517,7 @@ function renderTable(opportunities) {
       const safeDeadline = escapeHtml(formatDate(opportunity.deadline));
       const safeLink = escapeAttribute(opportunity.link || "");
       const safeSource = escapeHtml(opportunity.source || "Source");
-      const safeActionSummary = escapeHtml(getListSummary(opportunity));
+      const safeAddedAt = escapeHtml(formatAddedDate(opportunity.addedAt));
       const safeStatus = escapeHtml(getStatusLabel(opportunity));
       const safeFitTooltip = escapeAttribute(
         (Array.isArray(opportunity.fitReasons) && opportunity.fitReasons.length > 0
@@ -451,7 +527,7 @@ function renderTable(opportunities) {
       const safeId = escapeAttribute(opportunity.id || "");
 
       return `
-        <tr class="clickable-row" data-opportunity-id="${safeId}">
+        <tr class="clickable-row${expiringSoon ? " clickable-row--expiring" : ""}" data-opportunity-id="${safeId}">
           <td data-label="Fit">
             <div
               class="fit-score fit-score--${fitTone}"
@@ -465,11 +541,14 @@ function renderTable(opportunities) {
           </td>
           <td data-label="Opportunity">
             <p class="opportunity-title">${safeTitle}</p>
-            <span class="cell-subtext">${safeActionSummary}</span>
+            <span class="cell-subtext">${escapeHtml(getOpportunityMetaLine(opportunity))}</span>
           </td>
-          <td data-label="Source"><span class="type-tag">${safeSource}</span></td>
+          <td data-label="Source">
+            <span class="type-tag">${safeSource}</span>
+          </td>
+          <td data-label="Added">${safeAddedAt}</td>
           <td data-label="Deadline">${safeDeadline}</td>
-          <td data-label="Status"><span class="type-tag">${safeStatus}</span></td>
+          <td data-label="Status"><span class="type-tag${expiringSoon ? " type-tag--expiring" : ""}">${safeStatus}</span></td>
           <td data-label="Link">
             ${
               safeLink
@@ -491,6 +570,7 @@ function renderCards(opportunities) {
 
   cardsView.innerHTML = opportunities
     .map((opportunity) => {
+      const expiringSoon = isExpiringSoon(opportunity);
       const fitScore = Number.isFinite(opportunity.fitScore) ? opportunity.fitScore : 0;
       const fitLabel = opportunity.fitLabel || getFitLabel(fitScore);
       const fitTone = getFitTone(fitScore);
@@ -502,10 +582,10 @@ function renderCards(opportunities) {
           : "Global / unspecified"
       );
       const safeDeadline = escapeHtml(formatDate(opportunity.deadline));
+      const safeAddedAt = escapeHtml(formatAddedDate(opportunity.addedAt));
       const safeType = escapeHtml(opportunity.type || "Opportunity");
       const safeLink = escapeAttribute(opportunity.link || "");
       const safeSource = escapeHtml(opportunity.source || "Source");
-      const safeActionSummary = escapeHtml(getListSummary(opportunity));
       const safeStatus = escapeHtml(getStatusLabel(opportunity));
       const safeFitTooltip = escapeAttribute(
         (Array.isArray(opportunity.fitReasons) && opportunity.fitReasons.length > 0
@@ -515,9 +595,11 @@ function renderCards(opportunities) {
       const safeId = escapeAttribute(opportunity.id || "");
 
       return `
-        <article class="opportunity-card opportunity-card--${fitTone}" data-opportunity-id="${safeId}">
+        <article class="opportunity-card opportunity-card--${fitTone}${expiringSoon ? " opportunity-card--expiring" : ""}" data-opportunity-id="${safeId}">
           <div class="opportunity-card__top">
-            <span class="type-tag">${safeSource}</span>
+            <div class="opportunity-card__source-tags">
+              <span class="type-tag">${safeSource}</span>
+            </div>
             <div
               class="fit-score fit-score--${fitTone}"
               title="${safeFitTooltip}"
@@ -531,7 +613,7 @@ function renderCards(opportunities) {
 
           <div class="opportunity-card__body">
             <h3>${safeTitle}</h3>
-            <p class="cell-subtext">${safeActionSummary}</p>
+            <p class="cell-subtext">${escapeHtml(getOpportunityMetaLine(opportunity))}</p>
           </div>
 
           <dl class="opportunity-card__meta">
@@ -544,6 +626,10 @@ function renderCards(opportunities) {
               <dd>${safeCountries}</dd>
             </div>
             <div>
+              <dt>Added</dt>
+              <dd>${safeAddedAt}</dd>
+            </div>
+            <div>
               <dt>Deadline</dt>
               <dd>${safeDeadline}</dd>
             </div>
@@ -553,7 +639,7 @@ function renderCards(opportunities) {
             </div>
             <div>
               <dt>Status</dt>
-              <dd><span class="type-tag">${safeStatus}</span></dd>
+              <dd><span class="type-tag${expiringSoon ? " type-tag--expiring" : ""}">${safeStatus}</span></dd>
             </div>
           </dl>
 
@@ -588,9 +674,33 @@ function getListSummary(opportunity) {
   return "Keyword match from the job title or procurement notice.";
 }
 
+function getOpportunityMetaLine(opportunity) {
+  if (currentOpportunityTab === "actioned" && opportunity.actionStatus) {
+    return getListSummary(opportunity);
+  }
+
+  const parts = [];
+  if (opportunity.organization && opportunity.organization !== "N/A") {
+    parts.push(opportunity.organization);
+  }
+
+  if (isExpiringSoon(opportunity)) {
+    const daysUntilDeadline = getDaysUntilDeadline(opportunity.deadline);
+    parts.push(daysUntilDeadline === 0 ? "Closes today" : `Closes in ${daysUntilDeadline} day${daysUntilDeadline === 1 ? "" : "s"}`);
+  } else {
+    parts.push(getListSummary(opportunity));
+  }
+
+  return parts.join(" • ");
+}
+
 function getStatusLabel(opportunity) {
   if (opportunity.status === "expired") {
     return "Expired";
+  }
+
+  if (isExpiringSoon(opportunity)) {
+    return "Expiring soon";
   }
 
   if (opportunity.actionStatus) {
@@ -611,6 +721,10 @@ function getActionLabel(actionStatus) {
 
   if (actionStatus === "not_relevant") {
     return "Not relevant";
+  }
+
+  if (actionStatus === "expired_manual") {
+    return "Expired";
   }
 
   return "Action taken";
@@ -678,6 +792,54 @@ function formatDate(value) {
   }).format(date);
 }
 
+function getExpiryAlertDays() {
+  const configured = Number(notificationSettings?.expiryAlertDays);
+  return Number.isFinite(configured) ? Math.max(0, configured) : 2;
+}
+
+function getDaysUntilDeadline(value) {
+  if (!value) {
+    return null;
+  }
+
+  const deadline = new Date(value);
+  if (Number.isNaN(deadline.getTime())) {
+    return null;
+  }
+
+  const today = new Date();
+  const todayStart = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+  const deadlineStart = new Date(deadline.getFullYear(), deadline.getMonth(), deadline.getDate());
+  return Math.round((deadlineStart - todayStart) / 86400000);
+}
+
+function isExpiringSoon(opportunity) {
+  if (!opportunity || opportunity.status === "expired" || opportunity.actionStatus) {
+    return false;
+  }
+
+  const daysUntilDeadline = getDaysUntilDeadline(opportunity.deadline);
+  const expiryAlertDays = getExpiryAlertDays();
+  return daysUntilDeadline !== null && daysUntilDeadline >= 0 && daysUntilDeadline <= expiryAlertDays;
+}
+
+function formatAddedDate(value) {
+  if (!value) {
+    return "Unknown";
+  }
+
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return String(value);
+  }
+
+  return new Intl.DateTimeFormat(undefined, {
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+  }).format(date);
+}
+
 function formatTimestamp(value) {
   if (!value) {
     return "Unknown time";
@@ -701,6 +863,131 @@ function formatTimestamp(value) {
 function setMessage(message, tone) {
   messageBox.className = `message-box ${tone}`;
   messageBox.textContent = message;
+}
+
+function applyNotificationSettings(settings) {
+  if (!settings) {
+    return;
+  }
+
+  notificationSettings = settings;
+  notificationEmails.value = Array.isArray(settings.recipientEmails)
+    ? settings.recipientEmails.join(", ")
+    : "";
+  notificationExpiryDays.value = Number.isFinite(settings.expiryAlertDays)
+    ? String(settings.expiryAlertDays)
+    : "2";
+  notificationSenderName.value = settings.senderName || "";
+  notificationSenderEmail.value = settings.senderEmail || "";
+  notificationEnabled.checked = Boolean(settings.enabled);
+  notificationNewEnabled.checked = Boolean(settings.newTenderEnabled);
+  notificationExpiryEnabled.checked = Boolean(settings.expiryAlertEnabled);
+  notificationSettingsStatus.textContent = getNotificationSettingsStatusText(settings);
+}
+
+function collectNotificationSettingsForm() {
+  return {
+    enabled: notificationEnabled.checked,
+    newTenderEnabled: notificationNewEnabled.checked,
+    expiryAlertEnabled: notificationExpiryEnabled.checked,
+    recipientEmails: splitRecipientEmails(notificationEmails.value),
+    senderName: notificationSenderName.value.trim(),
+    senderEmail: notificationSenderEmail.value.trim(),
+    expiryAlertDays: Number(notificationExpiryDays.value || 0),
+  };
+}
+
+async function handleSaveNotificationSettings() {
+  setNotificationSettingsBusy(true, "Saving notification settings.");
+
+  try {
+    const saved = await saveNotificationSettings(collectNotificationSettingsForm());
+    applyNotificationSettings(saved);
+    setMessage("Notification settings saved.", "success");
+  } catch (error) {
+    setMessage(error.message || "Could not save notification settings.", "error");
+    notificationSettingsStatus.textContent = error.message || "Could not save notification settings.";
+  } finally {
+    setNotificationSettingsBusy(false);
+  }
+}
+
+async function handleTestNotification() {
+  setNotificationSettingsBusy(true, "Sending test notification.");
+
+  try {
+    const result = await sendTestNotification();
+    setMessage(result?.message || "Test notification email sent.", "success");
+    notificationSettingsStatus.textContent = result?.message || "Test notification email sent.";
+  } catch (error) {
+    setMessage(error.message || "Could not send the test notification.", "error");
+    notificationSettingsStatus.textContent = error.message || "Could not send the test notification.";
+  } finally {
+    setNotificationSettingsBusy(false);
+  }
+}
+
+function splitRecipientEmails(value) {
+  return String(value || "")
+    .split(/[\n,;]+/)
+    .map((entry) => entry.trim())
+    .filter(Boolean);
+}
+
+function setNotificationSettingsBusy(isBusy, statusText = null) {
+  [
+    notificationEmails,
+    notificationExpiryDays,
+    notificationSenderName,
+    notificationSenderEmail,
+    notificationEnabled,
+    notificationNewEnabled,
+    notificationExpiryEnabled,
+    notificationSaveButton,
+    notificationTestButton,
+  ].forEach((element) => {
+    element.disabled = isBusy;
+  });
+
+  if (statusText) {
+    notificationSettingsStatus.textContent = statusText;
+  } else if (notificationSettings) {
+    notificationSettingsStatus.textContent = getNotificationSettingsStatusText(notificationSettings);
+  }
+}
+
+function getNotificationSettingsStatusText(settings) {
+  if (!settings.enabled) {
+    return "Notifications are disabled.";
+  }
+
+  const recipientCount = Array.isArray(settings.recipientEmails) ? settings.recipientEmails.length : 0;
+  return recipientCount
+    ? `Sending to ${recipientCount} recipient${recipientCount === 1 ? "" : "s"}. Expiry alarm: ${settings.expiryAlertDays} day${settings.expiryAlertDays === 1 ? "" : "s"} before deadline.`
+    : "Notifications enabled, but no recipients are configured yet.";
+}
+
+function getNotificationSummaryMessage(summary) {
+  if (!summary) {
+    return "Notification status unavailable.";
+  }
+
+  const sentParts = [];
+  if (Number(summary.newTenderSentCount) > 0) {
+    sentParts.push(`${summary.newTenderSentCount} new-tender email match${summary.newTenderSentCount === 1 ? "" : "es"}`);
+  }
+  if (Number(summary.expiryAlertSentCount) > 0) {
+    sentParts.push(`${summary.expiryAlertSentCount} expiry alert${summary.expiryAlertSentCount === 1 ? "" : "s"}`);
+  }
+  if (Number(summary.expiredTenderSentCount) > 0) {
+    sentParts.push(`${summary.expiredTenderSentCount} expired tender alert${summary.expiredTenderSentCount === 1 ? "" : "s"}`);
+  }
+
+  if (sentParts.length > 0) {
+    return `Notifications sent for ${sentParts.join(" and ")}.`;
+  }
+
+  return summary.skippedReason || "No notifications were sent.";
 }
 
 function setStatus(label, tone) {
@@ -735,14 +1022,18 @@ function renderSourceHealth(sourceResults) {
     return;
   }
 
-  if (!Array.isArray(sourceResults) || sourceResults.length === 0) {
+  const visibleResults = Array.isArray(sourceResults)
+    ? sourceResults.filter((result) => DISPLAY_SOURCES.includes(result?.source))
+    : [];
+
+  if (visibleResults.length === 0) {
     sourceHealth.hidden = true;
     sourceHealth.innerHTML = "";
     return;
   }
 
   sourceHealth.hidden = false;
-  sourceHealth.innerHTML = sourceResults
+  sourceHealth.innerHTML = visibleResults
     .map((result) => {
       const tone = getSourceHealthTone(result);
       const sourceName = escapeHtml(result?.source || "Unknown source");
@@ -901,17 +1192,33 @@ function openDetailModal(opportunityId) {
 
   detailNotes.disabled = isExpiredTab;
   detailActionApplied.hidden = !isLiveTab;
+  detailActionExpired.hidden = !isLiveTab;
   detailActionNotInterested.hidden = !isLiveTab;
   detailActionNotRelevant.hidden = !isLiveTab;
   detailActionReset.hidden = !isActionedTab;
   detailModal.hidden = false;
-  document.body.classList.add("modal-open");
+  syncGlobalModalState();
 }
 
 function closeDetailModal() {
   detailModal.hidden = true;
   selectedOpportunityId = null;
-  document.body.classList.remove("modal-open");
+  syncGlobalModalState();
+}
+
+function openSettingsModal() {
+  settingsModal.hidden = false;
+  syncGlobalModalState();
+  notificationEmails.focus();
+}
+
+function closeSettingsModal() {
+  settingsModal.hidden = true;
+  syncGlobalModalState();
+}
+
+function syncGlobalModalState() {
+  document.body.classList.toggle("modal-open", !detailModal.hidden || !settingsModal.hidden);
 }
 
 async function handleDetailActionSubmit(actionStatus) {
@@ -955,6 +1262,7 @@ async function handleDetailActionSubmit(actionStatus) {
 function toggleDetailActionButtons(disabled) {
   [
     detailActionApplied,
+    detailActionExpired,
     detailActionNotInterested,
     detailActionNotRelevant,
     detailActionReset,

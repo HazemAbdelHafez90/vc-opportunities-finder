@@ -52,10 +52,17 @@
                 Cached first, refreshed on demand, and ranked for Fairpicture-style assignments.
               </p>
             </div>
-            <span class="status-pill" id="status-pill">
-              <span class="status-pill__spinner" aria-hidden="true"></span>
-              <span class="status-pill__label">Idle</span>
-            </span>
+            <div class="panel-heading__actions">
+              <button id="open-settings" class="icon-button" type="button" aria-label="Open settings">
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="M19.14 12.94a7.43 7.43 0 0 0 .05-.94 7.43 7.43 0 0 0-.05-.94l2.03-1.58a.5.5 0 0 0 .12-.64l-1.92-3.32a.5.5 0 0 0-.6-.22l-2.39.96a7.09 7.09 0 0 0-1.63-.94l-.36-2.54a.5.5 0 0 0-.5-.42H10.1a.5.5 0 0 0-.5.42l-.36 2.54c-.58.22-1.13.53-1.63.94l-2.39-.96a.5.5 0 0 0-.6.22L2.7 8.84a.5.5 0 0 0 .12.64l2.03 1.58a7.43 7.43 0 0 0-.05.94c0 .32.02.63.05.94L2.82 14.52a.5.5 0 0 0-.12.64l1.92 3.32a.5.5 0 0 0 .6.22l2.39-.96c.5.4 1.05.72 1.63.94l.36 2.54a.5.5 0 0 0 .5.42h3.8a.5.5 0 0 0 .5-.42l.36-2.54c.58-.22 1.13-.53 1.63-.94l2.39.96a.5.5 0 0 0 .6-.22l1.92-3.32a.5.5 0 0 0-.12-.64ZM12 15.5A3.5 3.5 0 1 1 12 8.5a3.5 3.5 0 0 1 0 7Z"/>
+                </svg>
+              </button>
+              <span class="status-pill" id="status-pill">
+                <span class="status-pill__spinner" aria-hidden="true"></span>
+                <span class="status-pill__label">Idle</span>
+              </span>
+            </div>
           </div>
 
           <div class="panel-actions">
@@ -63,14 +70,21 @@
               <span class="source-chip">ReliefWeb</span>
               <span class="source-chip">UNDP Procurement</span>
               <span class="source-chip">UNGM</span>
-              <span class="source-chip">UNGM - UNESCO</span>
-              <span class="source-chip">UNGM - UN Women</span>
               <span class="source-chip">ICIMOD</span>
             </div>
             <button id="fetch-button" class="primary-button" type="button">
               <span class="button-spinner" aria-hidden="true"></span>
               <span class="button-label">Refresh Results</span>
             </button>
+          </div>
+
+          <div class="settings-strip">
+            <div class="settings-strip__copy">
+              <p class="section-label">Operations settings</p>
+              <p id="notification-settings-status" class="notification-settings__status">
+                Loading notification settings.
+              </p>
+            </div>
           </div>
         </section>
 
@@ -163,8 +177,6 @@
                 <option value="ReliefWeb">ReliefWeb</option>
                 <option value="UNDP Procurement">UNDP Procurement</option>
                 <option value="UNGM">UNGM</option>
-                <option value="UNGM - UNESCO">UNGM - UNESCO</option>
-                <option value="UNGM - UN Women">UNGM - UN Women</option>
                 <option value="ICIMOD">ICIMOD</option>
               </select>
             </label>
@@ -192,6 +204,7 @@
                   <th>Fit</th>
                   <th>Opportunity</th>
                   <th>Source</th>
+                  <th>Added</th>
                   <th>Deadline</th>
                   <th>Status</th>
                   <th>Link</th>
@@ -199,7 +212,7 @@
               </thead>
               <tbody id="results-body">
                 <tr class="placeholder-row">
-                  <td colspan="6">No results yet.</td>
+                  <td colspan="7">No results yet.</td>
                 </tr>
               </tbody>
             </table>
@@ -390,12 +403,15 @@
             </label>
 
             <p id="detail-action-help" class="cell-subtext">
-              Notes are required for Applied, Not interested, and Not relevant.
+              Notes are required for Applied, Not interested, Not relevant, and Expired.
             </p>
 
             <div class="detail-modal__buttons">
               <button id="detail-action-applied" class="primary-button primary-button--small" type="button">
                 Mark Applied
+              </button>
+              <button id="detail-action-expired" class="mini-action-button" type="button">
+                Expired
               </button>
               <button id="detail-action-not-interested" class="mini-action-button" type="button">
                 Not interested
@@ -416,6 +432,103 @@
       </aside>
     </div>
 
-    <script src="./app.js?v=20260331-7"></script>
+    <div id="settings-modal" class="settings-modal" hidden>
+      <div id="settings-backdrop" class="settings-modal__backdrop"></div>
+      <aside
+        class="settings-modal__panel"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="notification-settings-title"
+      >
+        <div class="settings-modal__header">
+          <div>
+            <p class="section-label">Notifications</p>
+            <h3 id="notification-settings-title">Email alerts</h3>
+            <p class="panel-summary">
+              Configure who gets alerted, how soon expiry alarms fire, and which tender signals stay active.
+            </p>
+          </div>
+          <button id="settings-close" class="icon-button icon-button--soft" type="button" aria-label="Close settings">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M6.4 5 5 6.4 10.6 12 5 17.6 6.4 19l5.6-5.6 5.6 5.6 1.4-1.4-5.6-5.6L19 6.4 17.6 5 12 10.6Z"/>
+            </svg>
+          </button>
+        </div>
+
+        <div class="settings-modal__body">
+          <div class="notification-settings__grid">
+            <label class="table-control notification-settings__field">
+              <span>Recipient emails</span>
+              <textarea
+                id="notification-emails"
+                rows="3"
+                placeholder="name@fairpicture.org, team@fairpicture.org"
+              ></textarea>
+            </label>
+
+            <label class="table-control notification-settings__field">
+              <span>Alert before expiry</span>
+              <input
+                id="notification-expiry-days"
+                type="number"
+                min="0"
+                max="30"
+                step="1"
+                placeholder="2"
+              />
+            </label>
+
+            <label class="table-control notification-settings__field">
+              <span>Sender name</span>
+              <input
+                id="notification-sender-name"
+                type="text"
+                placeholder="Fairpicture Tender Radar"
+              />
+            </label>
+
+            <label class="table-control notification-settings__field">
+              <span>Sender email</span>
+              <input
+                id="notification-sender-email"
+                type="email"
+                placeholder="alerts@your-domain.com"
+              />
+            </label>
+          </div>
+
+          <div class="notification-settings__toggles" role="group" aria-label="Notification toggles">
+            <label class="notification-toggle">
+              <input id="notification-enabled" type="checkbox" />
+              <span>Enable notifications</span>
+            </label>
+            <label class="notification-toggle">
+              <input id="notification-new-enabled" type="checkbox" />
+              <span>New tender alerts</span>
+            </label>
+            <label class="notification-toggle">
+              <input id="notification-expiry-enabled" type="checkbox" />
+              <span>Expiring tender alerts</span>
+            </label>
+          </div>
+
+          <div class="notification-settings__actions">
+            <div class="notification-settings__buttons">
+              <button id="notification-save" class="primary-button primary-button--small" type="button">
+                Save notification settings
+              </button>
+              <button id="notification-test" class="mini-action-button" type="button">
+                Send test email
+              </button>
+            </div>
+            <p class="cell-subtext">
+              Postmark credentials stay server-side. The sender email must be valid in your Postmark account.
+            </p>
+          </div>
+        </div>
+      </aside>
+    </div>
+
+    <script src="./app.js?v=20260404-5"></script>
   </body>
 </html>

@@ -28,6 +28,10 @@ API routes:
   returns the latest sync metadata
 - `api/refresh.py`
   fetches live data from all sources and updates Supabase
+- `api/notification-settings.py`
+  reads and saves email notification settings for the sync job
+- `api/test-notification.py`
+  sends a manual Postmark test email using the current notification settings
 - `api/_lib.py`
   shared source fetchers, fit scoring, normalization, and Supabase REST helpers
 
@@ -53,6 +57,7 @@ In Supabase:
 This creates:
 - `opportunities`
 - `sync_runs`
+- `notification_settings`
 - indexes
 - the `updated_at` trigger
 - RLS policies restricted to the service role
@@ -71,6 +76,9 @@ You need these exact environment variables:
 
 - `SUPABASE_URL`
 - `SUPABASE_SERVICE_ROLE_KEY`
+- `POSTMARK_SERVER_TOKEN`
+- `POSTMARK_FROM_EMAIL`
+- `POSTMARK_FROM_NAME` (optional)
 
 ### 4. Add env vars in Vercel
 
@@ -79,6 +87,9 @@ From the project directory:
 ```bash
 vercel env add SUPABASE_URL
 vercel env add SUPABASE_SERVICE_ROLE_KEY
+vercel env add POSTMARK_SERVER_TOKEN
+vercel env add POSTMARK_FROM_EMAIL
+vercel env add POSTMARK_FROM_NAME
 ```
 
 Then redeploy:
@@ -112,3 +123,6 @@ If you only run a static file server, the frontend will load but the API routes 
 - Cross-source deduplication is not implemented yet
 - Anyone can trigger refresh
 - The refresh endpoint includes a simple running-sync guard to reduce duplicate source fetches
+- Notification recipient emails, sender override, and expiry lead time are configurable in the app UI and stored in Supabase
+- New-tender emails send once per tender; about-to-expire alerts send once per tender for the currently configured lead time; expired-tender alerts send once when an item moves to expired
+- The sender email must be valid for your Postmark server or sender signature

@@ -5,7 +5,7 @@ from http.server import BaseHTTPRequestHandler
 
 from api._lib import update_opportunity_action
 
-ALLOWED_ACTIONS = {"applied", "not_interested", "not_relevant", ""}
+ALLOWED_ACTIONS = {"applied", "not_interested", "not_relevant", "expired_manual", ""}
 
 
 class handler(BaseHTTPRequestHandler):
