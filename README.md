@@ -83,6 +83,9 @@ You need these exact environment variables:
 - `SUPABASE_ANON_KEY`
 - `SUPABASE_SERVICE_ROLE_KEY`
 - `TEAM_ALLOWED_EMAILS` (optional but recommended)
+- `ADMIN_EMAIL` (optional fallback admin login)
+- `ADMIN_PASSWORD_HASH` (optional fallback admin login)
+- `ADMIN_SESSION_SECRET` (optional but recommended when admin login is enabled)
 - `POSTMARK_SERVER_TOKEN`
 - `POSTMARK_FROM_EMAIL`
 - `POSTMARK_FROM_NAME` (optional)
@@ -96,6 +99,9 @@ vercel env add SUPABASE_URL
 vercel env add SUPABASE_ANON_KEY
 vercel env add SUPABASE_SERVICE_ROLE_KEY
 vercel env add TEAM_ALLOWED_EMAILS
+vercel env add ADMIN_EMAIL
+vercel env add ADMIN_PASSWORD_HASH
+vercel env add ADMIN_SESSION_SECRET
 vercel env add POSTMARK_SERVER_TOKEN
 vercel env add POSTMARK_FROM_EMAIL
 vercel env add POSTMARK_FROM_NAME
@@ -134,6 +140,7 @@ If you only run a static file server, the frontend will load but the API routes 
 - disable public signup in Supabase: `Authentication` → `Providers` → `Email` and turn off self sign-up
 - create users from Supabase via `Authentication` → `Users` → `Invite user`
 - if `TEAM_ALLOWED_EMAILS` is set, the backend rejects any signed-in email not on that allowlist
+- admin fallback auth also exists for bootstrap/recovery; if used, configure `ADMIN_SESSION_SECRET` and either seed `public.admin_users` or set `ADMIN_EMAIL` plus `ADMIN_PASSWORD_HASH`
 - The refresh endpoint includes a simple running-sync guard to reduce duplicate source fetches
 - Notification recipient emails, sender override, and expiry lead time are configurable in the app UI and stored in Supabase
 - New-tender emails send once per tender; about-to-expire alerts send once per tender for the currently configured lead time; expired-tender alerts send once when an item moves to expired

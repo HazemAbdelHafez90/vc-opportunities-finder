@@ -324,10 +324,10 @@ async function bootstrapAuth() {
     const authConfig = await fetchAuthConfig();
     if (!authConfig?.supabaseUrl || !authConfig?.supabaseAnonKey) {
       setAuthMessage(
-        "Auth is not configured. Add SUPABASE_URL and SUPABASE_ANON_KEY to the frontend environment.",
+        "Supabase auth is not configured. You can still use the fallback admin login if it is enabled.",
         true
       );
-      setAuthBusy(true);
+      setAuthBusy(false);
       setBootState(false);
       authShell.hidden = false;
       return;
@@ -357,7 +357,7 @@ async function bootstrapAuth() {
     });
   } catch (error) {
     setAuthMessage(error.message || "Could not initialize sign-in.", true);
-    setAuthBusy(true);
+    setAuthBusy(false);
     setBootState(false);
     authShell.hidden = false;
   }
@@ -540,12 +540,11 @@ function parseStoredAdminUser(rawValue) {
 async function handleAuthSubmit(event) {
   event.preventDefault();
 
-  if (!supabaseClient) {
-    setAuthMessage("Supabase auth is not configured.", true);
-    return;
-  }
-
   if (authFlowMode === "password-reset") {
+    if (!supabaseClient) {
+      setAuthMessage("Supabase auth is not configured for password recovery.", true);
+      return;
+    }
     await handlePasswordSetup();
     return;
   }
@@ -560,6 +559,12 @@ async function handleAuthSubmit(event) {
     storeAdminSession(adminResult);
     setAuthBusy(false);
     await applyAdminSession();
+    return;
+  }
+
+  if (!supabaseClient) {
+    setAuthBusy(false);
+    setAuthMessage("Supabase auth is not configured, and the fallback admin login was rejected.", true);
     return;
   }
 
