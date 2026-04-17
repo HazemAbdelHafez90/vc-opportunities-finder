@@ -4,18 +4,21 @@ import json
 from http.server import BaseHTTPRequestHandler
 from urllib import parse
 
-from api._lib import get_managed_opportunities_from_db
+from api._lib import AuthError, get_authenticated_user, get_managed_opportunities_from_db
 
 
 class handler(BaseHTTPRequestHandler):
     def do_GET(self):
         try:
+            get_authenticated_user(self.headers)
             bucket = parse.parse_qs(parse.urlparse(self.path).query).get("bucket", ["all"])[0]
             items = filter_items_by_bucket(get_managed_opportunities_from_db(), bucket)
             self.write_json(
                 {"items": items},
-                cache_control="public, s-maxage=60, stale-while-revalidate=300",
+                cache_control="private, no-store",
             )
+        except AuthError as exc:
+            self.write_json({"error": str(exc)}, status=401, cache_control="no-store")
         except Exception as exc:  # pragma: no cover
             self.write_json({"error": str(exc)}, status=502, cache_control="no-store")
 
@@ -30,19 +33,35 @@ class handler(BaseHTTPRequestHandler):
 
 
 def filter_items_by_bucket(items: list[dict], bucket: str) -> list[dict]:
-    if bucket == "actioned":
+    if bucket == "applied":
         return [
             item for item in items
-            if item.get("status") == "open" and item.get("actionStatus")
+            if item.get("actionStatus") == "applied"
         ]
 
-    if bucket == "expired":
-        return [item for item in items if item.get("status") == "expired"]
-
-    if bucket == "live":
+    if bucket == "pending":
         return [
             item for item in items
-            if item.get("status") == "open" and not item.get("actionStatus")
+            if item.get("actionStatus") == "pending"
+        ]
+
+    if bucket == "missed":
+        return [
+            item for item in items
+            if item.get("actionStatus") == "missed"
+            or (
+                item.get("status") in {"expired", "stale"}
+                and not item.get("actionStatus")
+            )
+        ]
+
+    if bucket == "live":
+        # "reviewed" items are still active tenders — include them in the results bucket
+        # so the ops team can see what's been reviewed alongside fresh live tenders
+        return [
+            item for item in items
+            if item.get("status") == "open"
+            and item.get("actionStatus") in {None, "", "reviewed"}
         ]
 
     return items

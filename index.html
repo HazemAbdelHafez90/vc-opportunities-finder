@@ -3,88 +3,220 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Fairpicture Opportunity Finder</title>
+    <title>Fairpicture Tender Radar</title>
     <meta
       name="description"
-      content="Find humanitarian media and storytelling opportunities from ReliefWeb."
+      content="Find humanitarian media and storytelling procurement opportunities ranked for Fairpicture."
     />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
-      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Noto+Serif:wght@400;500;700&display=swap"
+      href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600&family=DM+Serif+Display:ital@0;1&display=swap"
       rel="stylesheet"
     />
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <style>
       html {
-        background: #f4f1ef;
-      }
-
-      html[data-theme="dark"] {
-        background: #0c0e12;
+        background: #0e1117;
       }
     </style>
     <link rel="stylesheet" href="./styles.css" />
     <script>
       (function() {
         try {
-          var theme = localStorage.getItem("fairpicture-opportunities-theme");
           var view = localStorage.getItem("fairpicture-opportunities-view");
-          document.documentElement.dataset.theme = theme === "dark" ? "dark" : "light";
+          var theme = localStorage.getItem("fairpicture-opportunities-theme") || "dark";
+          document.documentElement.dataset.theme = theme;
           document.documentElement.dataset.view = view === "cards" ? "cards" : "table";
-          document.documentElement.style.colorScheme = theme === "dark" ? "dark" : "light";
+          document.documentElement.style.colorScheme = theme;
         } catch (error) {
-          document.documentElement.dataset.theme = "light";
+          document.documentElement.dataset.theme = "dark";
           document.documentElement.dataset.view = "table";
-          document.documentElement.style.colorScheme = "light";
+          document.documentElement.style.colorScheme = "dark";
         }
       })();
     </script>
   </head>
   <body>
-    <div class="page-shell">
+    <section id="boot-shell" class="boot-shell" aria-live="polite">
+      <div class="boot-shell__panel">
+        <p class="section-label">Secure Workspace</p>
+        <h1>Restoring access</h1>
+        <p id="boot-message" class="boot-shell__message">
+          Checking the last signed-in session and loading the cached tender desk.
+        </p>
+        <div class="boot-shell__meter" aria-hidden="true">
+          <span></span>
+        </div>
+      </div>
+    </section>
+
+    <section id="auth-shell" class="auth-shell" hidden>
+      <div class="auth-shell__brand">
+        <div class="brand-wordmark auth-stage auth-stage--0">
+          <span class="brand-wordmark__mark" aria-hidden="true">
+            <svg viewBox="0 0 32 32">
+              <circle cx="16" cy="16" r="7.2"></circle>
+              <path d="M16 2.5v4.4M16 25.1v4.4M2.5 16h4.4M25.1 16h4.4"></path>
+            </svg>
+          </span>
+          <span class="brand-wordmark__text">Fairpicture</span>
+        </div>
+
+        <div class="auth-hero">
+          <p class="auth-kicker auth-stage auth-stage--1"><span></span>Tender Radar</p>
+          <h1 class="auth-stage auth-stage--2">Find every <em>visual</em> opportunity, fast.</h1>
+          <p class="auth-shell__summary auth-stage auth-stage--3">
+            A live procurement desk scanning ReliefWeb, UNDP, UNGM, ICIMOD and more — ranked by fit for documentary, photography, and field production work.
+          </p>
+          <div class="source-pills auth-stage auth-stage--4" aria-label="Source coverage">
+            <span class="source-pills__item source-pills__item--live">ReliefWeb</span>
+            <span class="source-pills__item source-pills__item--live">UNDP Procurement</span>
+            <span class="source-pills__item source-pills__item--live">UNGM</span>
+            <span class="source-pills__item source-pills__item--live">ICIMOD</span>
+            <span class="source-pills__item source-pills__item--live">Welthungerhilfe</span>
+            <span class="source-pills__item">Aid-LINK</span>
+            <span class="source-pills__item">NGOtenders</span>
+          </div>
+          <div class="auth-stats auth-stage auth-stage--5">
+            <div>
+              <strong>5</strong>
+              <span>Live Sources</span>
+            </div>
+            <div>
+              <strong>∞</strong>
+              <span>Auto-Scan</span>
+            </div>
+            <div>
+              <strong>Fit</strong>
+              <span>Ranked by</span>
+            </div>
+          </div>
+        </div>
+
+        <p class="auth-shell__footnote">Internal use only · Fairpicture Operations</p>
+      </div>
+
+      <div class="auth-shell__panel">
+        <div class="auth-form__intro">
+          <p class="auth-access-badge">Private Access</p>
+          <h2 id="auth-title">Welcome back</h2>
+          <p id="auth-summary" class="auth-form__subline">Sign in with your invited team account.</p>
+        </div>
+        <form id="auth-form" class="auth-form">
+          <label id="auth-email-field" class="auth-form__field">
+            <span>Email</span>
+            <input id="auth-email" type="email" autocomplete="email" placeholder="you@fairpicture.org" required />
+          </label>
+          <label class="auth-form__field">
+            <span id="auth-password-label">Password</span>
+            <input id="auth-password" type="password" autocomplete="current-password" required />
+          </label>
+          <label id="auth-password-confirm-field" class="auth-form__field" hidden>
+            <span>Confirm password</span>
+            <input id="auth-password-confirm" type="password" autocomplete="new-password" />
+          </label>
+          <button id="auth-submit" class="primary-button auth-form__submit" type="submit">
+            Sign in to Radar
+          </button>
+        </form>
+        <p id="auth-message" class="auth-shell__message">
+          Access is limited to invited team members. Contact ops@fairpicture.org to request access.
+        </p>
+      </div>
+    </section>
+
+    <div id="app-shell" class="page-shell" hidden>
       <main class="dashboard">
         <section class="control-panel">
-          <div class="panel-heading">
-            <div>
-              <p class="section-label">Fairpicture Tender Radar</p>
-              <h2>Latest opportunities</h2>
+          <div class="workspace-bar">
+            <div class="workspace-bar__identity">
+              <p class="section-label">Tender Radar</p>
+              <div class="workspace-bar__title-row">
+                <h2 class="headline">Fairpicture procurement desk</h2>
+                <span class="workspace-badge">Internal</span>
+              </div>
               <p class="panel-summary">
-                Cached first, refreshed on demand, and ranked for Fairpicture-style assignments.
+                Procurement and editorial opportunities ranked for documentary, photography, and field production work.
               </p>
+              <div class="workspace-meta">
+                <span id="last-updated">Last synced: never</span>
+                <span class="status-pill" id="status-pill">
+                  <span class="status-pill__spinner" aria-hidden="true"></span>
+                  <span class="status-pill__label">Idle</span>
+                </span>
+              </div>
+              <strong id="result-count" hidden>0 items</strong>
             </div>
-            <div class="panel-heading__actions">
-              <button id="open-settings" class="icon-button" type="button" aria-label="Open settings">
-                <svg viewBox="0 0 24 24" aria-hidden="true">
-                  <path d="M19.14 12.94a7.43 7.43 0 0 0 .05-.94 7.43 7.43 0 0 0-.05-.94l2.03-1.58a.5.5 0 0 0 .12-.64l-1.92-3.32a.5.5 0 0 0-.6-.22l-2.39.96a7.09 7.09 0 0 0-1.63-.94l-.36-2.54a.5.5 0 0 0-.5-.42H10.1a.5.5 0 0 0-.5.42l-.36 2.54c-.58.22-1.13.53-1.63.94l-2.39-.96a.5.5 0 0 0-.6.22L2.7 8.84a.5.5 0 0 0 .12.64l2.03 1.58a7.43 7.43 0 0 0-.05.94c0 .32.02.63.05.94L2.82 14.52a.5.5 0 0 0-.12.64l1.92 3.32a.5.5 0 0 0 .6.22l2.39-.96c.5.4 1.05.72 1.63.94l.36 2.54a.5.5 0 0 0 .5.42h3.8a.5.5 0 0 0 .5-.42l.36-2.54c.58-.22 1.13-.53 1.63-.94l2.39.96a.5.5 0 0 0 .6-.22l1.92-3.32a.5.5 0 0 0-.12-.64ZM12 15.5A3.5 3.5 0 1 1 12 8.5a3.5 3.5 0 0 1 0 7Z"/>
-                </svg>
+            <div class="workspace-bar__actions">
+              <!-- legacy theme buttons kept for JS compat, visually replaced by toggle -->
+              <div class="display-group display-group--header" role="group" aria-label="Theme mode" hidden>
+                <button id="theme-light" class="display-toggle active" type="button">Light</button>
+                <button id="theme-dark" class="display-toggle" type="button">Dark</button>
+              </div>
+
+              <!-- ✨ New theme toggle -->
+              <button id="theme-toggle" class="theme-toggle" type="button" aria-label="Toggle light/dark mode">
+                <span class="theme-toggle__thumb" aria-hidden="true"></span>
+                <span class="theme-toggle__icons" aria-hidden="true">
+                  <!-- Sun (left = light) -->
+                  <svg class="theme-toggle__icon theme-toggle__icon--sun" viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg">
+                    <path fill-rule="evenodd" d="M10 2a1 1 0 011 1v1a1 1 0 11-2 0V3a1 1 0 011-1zm4 8a4 4 0 11-8 0 4 4 0 018 0zm-.464 4.95l.707.707a1 1 0 001.414-1.414l-.707-.707a1 1 0 00-1.414 1.414zm2.12-10.607a1 1 0 010 1.414l-.706.707a1 1 0 11-1.414-1.414l.707-.707a1 1 0 011.414 0zM17 11a1 1 0 100-2h-1a1 1 0 100 2h1zm-7 4a1 1 0 011 1v1a1 1 0 11-2 0v-1a1 1 0 011-1zM5.05 6.464A1 1 0 106.465 5.05l-.708-.707a1 1 0 00-1.414 1.414l.707.707zm1.414 8.486l-.707.707a1 1 0 01-1.414-1.414l.707-.707a1 1 0 011.414 1.414zM4 11a1 1 0 100-2H3a1 1 0 000 2h1z" clip-rule="evenodd"/>
+                  </svg>
+                  <!-- Moon (right = dark) -->
+                  <svg class="theme-toggle__icon theme-toggle__icon--moon" viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg">
+                    <path d="M17.293 13.293A8 8 0 016.707 2.707a8.001 8.001 0 1010.586 10.586z"/>
+                  </svg>
+                </span>
               </button>
-              <span class="status-pill" id="status-pill">
-                <span class="status-pill__spinner" aria-hidden="true"></span>
-                <span class="status-pill__label">Idle</span>
-              </span>
+
+              <button id="sources-button" class="ghost-button" type="button">Sources</button>
+              <button id="open-settings" class="ghost-button" type="button">Settings</button>
+              <div id="auth-user" class="auth-user" hidden>
+                <span class="auth-user__label">Signed in as</span>
+                <span id="auth-user-email" class="auth-user__email"></span>
+                <button id="sign-out-button" class="ghost-button" type="button" aria-label="Sign out">
+                  Sign out
+                </button>
+              </div>
+              <button id="fetch-button" class="primary-button" type="button">
+                <span class="button-spinner" aria-hidden="true"></span>
+                <span class="button-label">Refresh Results</span>
+              </button>
             </div>
           </div>
 
-          <div class="panel-actions">
-            <div class="source-strip" aria-label="Integrated sources">
-              <span class="source-chip">ReliefWeb</span>
-              <span class="source-chip">UNDP Procurement</span>
-              <span class="source-chip">UNGM</span>
-              <span class="source-chip">ICIMOD</span>
-            </div>
-            <button id="fetch-button" class="primary-button" type="button">
-              <span class="button-spinner" aria-hidden="true"></span>
-              <span class="button-label">Refresh Results</span>
-            </button>
-          </div>
-
-          <div class="settings-strip">
+          <button id="settings-summary-button" class="settings-strip" type="button">
             <div class="settings-strip__copy">
               <p class="section-label">Operations settings</p>
               <p id="notification-settings-status" class="notification-settings__status">
                 Loading notification settings.
               </p>
             </div>
+            <span class="settings-strip__edit" aria-hidden="true">Edit</span>
+          </button>
+
+          <div class="stats-grid" aria-label="Opportunity metrics">
+            <article class="stat-card">
+              <p class="stat-card__label">Total Results</p>
+              <strong id="stat-total" class="stat-card__value">0</strong>
+              <p class="stat-card__sub">across all sources</p>
+            </article>
+            <article class="stat-card">
+              <p class="stat-card__label">High Fit</p>
+              <strong id="stat-high-fit" class="stat-card__value stat-card__value--green">0</strong>
+              <p id="stat-high-fit-sub" class="stat-card__sub stat-card__sub--green">↑ 0 new this week</p>
+            </article>
+            <article class="stat-card">
+              <p class="stat-card__label">Expiring Soon</p>
+              <strong id="stat-expiring" class="stat-card__value stat-card__value--amber">0</strong>
+              <p class="stat-card__sub stat-card__sub--amber">within 7 days</p>
+            </article>
+            <article class="stat-card">
+              <p class="stat-card__label">Applied</p>
+              <strong id="stat-applied" class="stat-card__value stat-card__value--blue">0</strong>
+              <p class="stat-card__sub">this quarter</p>
+            </article>
           </div>
         </section>
 
@@ -98,37 +230,38 @@
               aria-selected="true"
               aria-controls="panel-results"
             >
-              Live Results
+              Live Results <span id="tab-results-count" class="tab-count">0</span>
             </button>
             <button
-              id="tab-actioned"
+              id="tab-pending"
+              class="tab-button"
+              type="button"
+              role="tab"
+              aria-selected="false"
+              aria-controls="panel-results"
+              hidden
+            >
+              Pending
+            </button>
+            <button
+              id="tab-applied"
               class="tab-button"
               type="button"
               role="tab"
               aria-selected="false"
               aria-controls="panel-results"
             >
-              Action Taken
+              Applied <span id="tab-applied-count" class="tab-count">0</span>
             </button>
             <button
-              id="tab-expired"
+              id="tab-missed"
               class="tab-button"
               type="button"
               role="tab"
               aria-selected="false"
               aria-controls="panel-results"
             >
-              Expired
-            </button>
-            <button
-              id="tab-blocked"
-              class="tab-button"
-              type="button"
-              role="tab"
-              aria-selected="false"
-              aria-controls="panel-blocked"
-            >
-              Other Sources
+              Missed <span id="tab-missed-count" class="tab-count">0</span>
             </button>
           </div>
 
@@ -141,202 +274,219 @@
                   Prioritized for visual storytelling, production, and procurement relevance.
                 </p>
               </div>
-              <div class="results-meta">
-                <span id="result-count">0 items</span>
-                <span id="last-updated">Not fetched yet</span>
-                <div id="source-health" class="source-health" hidden></div>
+            </div>
+
+            <div class="results-toolbar" aria-label="Display preferences">
+              <label class="toolbar-search" for="tender-search">
+                <svg viewBox="0 0 20 20" aria-hidden="true">
+                  <path d="M13.9 13.9 18 18M8.5 15.5a7 7 0 1 1 0-14 7 7 0 0 1 0 14Z"></path>
+                </svg>
+                <input
+                  id="tender-search"
+                  type="search"
+                  placeholder="Search title, organization, source, link, or notice ID"
+                  autocomplete="off"
+                />
+                <button id="tender-search-clear" class="search-clear-button" type="button" aria-label="Clear search" hidden>
+                  ×
+                </button>
+              </label>
+
+              <details class="filter-chip" id="fit-filter-details">
+                <summary id="fit-filter-chip">Fit <svg viewBox="0 0 10 10"><path d="M2 3.5 5 6.5 8 3.5"></path></svg></summary>
+                <div class="filter-chip__panel">
+                  <select id="filter-fit">
+                    <option value="all">All fit</option>
+                    <option value="high">High fit</option>
+                    <option value="medium">Medium fit</option>
+                    <option value="low">Low fit</option>
+                  </select>
+                </div>
+              </details>
+
+              <details class="filter-chip" id="deadline-filter-details">
+                <summary id="deadline-filter-chip">Deadline <svg viewBox="0 0 10 10"><path d="M2 3.5 5 6.5 8 3.5"></path></svg></summary>
+                <div class="filter-chip__panel">
+                  <select id="filter-deadline">
+                    <option value="all">Any deadline</option>
+                    <option value="overdue">Expired</option>
+                    <option value="today">Today</option>
+                    <option value="next-7-days">Next 7 days</option>
+                    <option value="next-30-days">Next 30 days</option>
+                    <option value="later">Later than 30 days</option>
+                    <option value="unknown">No deadline</option>
+                  </select>
+                </div>
+              </details>
+
+              <details class="filter-chip" id="source-filter-details">
+                <summary id="source-filter-chip">Source <svg viewBox="0 0 10 10"><path d="M2 3.5 5 6.5 8 3.5"></path></svg></summary>
+                <div class="filter-chip__panel">
+                  <select id="filter-source">
+                    <option value="all">All sources</option>
+                    <option value="ReliefWeb">ReliefWeb</option>
+                    <option value="UNDP Procurement">UNDP Procurement</option>
+                    <option value="UNGM">UNGM</option>
+                    <option value="ICIMOD">ICIMOD</option>
+                    <option value="Welthungerhilfe">Welthungerhilfe</option>
+                  </select>
+                </div>
+              </details>
+
+              <details class="filter-chip" id="status-filter-details">
+                <summary id="status-filter-chip">Status <svg viewBox="0 0 10 10"><path d="M2 3.5 5 6.5 8 3.5"></path></svg></summary>
+                <div class="filter-chip__panel">
+                  <select id="filter-status">
+                    <option value="all">All statuses</option>
+                    <option value="live">Live</option>
+                    <option value="expiring-soon">Expiring soon</option>
+                    <option value="reviewed">Reviewed</option>
+                    <option value="pending">Pending</option>
+                    <option value="applied">Applied</option>
+                    <option value="missed">Missed</option>
+                    <option value="archived">Archived upstream</option>
+                    <option value="expired">Expired</option>
+                  </select>
+                </div>
+              </details>
+
+              <div class="results-toolbar__meta">
+                <p id="toolbar-range" class="results-filter-summary">0-0 of 0</p>
+                <p id="results-filter-summary" class="results-filter-summary" hidden>0 results</p>
+                <div class="display-group" role="group" aria-label="View mode">
+                  <button id="view-table" class="display-toggle active" type="button" aria-label="Table view">
+                    <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M2 4h16v4H2zM2 10h16v4H2zM2 16h16v2H2z"></path></svg>
+                  </button>
+                  <button id="view-cards" class="display-toggle" type="button" aria-label="Cards view">
+                    <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M2 3h7v6H2zM11 3h7v6h-7zM2 11h7v6H2zM11 11h7v6h-7z"></path></svg>
+                  </button>
+                </div>
               </div>
             </div>
 
-          <div class="display-controls" aria-label="Display preferences">
-            <div class="display-group" role="group" aria-label="View mode">
-              <button id="view-table" class="display-toggle active" type="button">Table</button>
-              <button id="view-cards" class="display-toggle" type="button">Cards</button>
+            <div id="message-box" class="message-box info">
+              Loading the latest opportunities.
             </div>
 
-            <div class="display-group" role="group" aria-label="Theme mode">
-              <button id="theme-light" class="display-toggle active" type="button">Light</button>
-              <button id="theme-dark" class="display-toggle" type="button">Dark</button>
-            </div>
-          </div>
-
-          <div class="table-controls">
-            <label class="table-control table-control--search">
-              <span>Filter table</span>
-              <input
-                id="table-search"
-                type="search"
-                placeholder="Search title, organization, country, or type"
-              />
-            </label>
-
-            <label class="table-control">
-              <span>Filter source</span>
-              <select id="source-filter">
-                <option value="all">All sources</option>
-                <option value="ReliefWeb">ReliefWeb</option>
-                <option value="UNDP Procurement">UNDP Procurement</option>
-                <option value="UNGM">UNGM</option>
-                <option value="ICIMOD">ICIMOD</option>
+            <div class="filters-hidden" hidden>
+              <select id="filter-opportunity">
+                <option value="all">All types</option>
               </select>
-            </label>
-
-            <label class="table-control">
-              <span>Sort by</span>
-              <select id="sort-by">
-                <option value="fit-desc">Fit: highest first</option>
-                <option value="deadline-asc">Deadline: earliest first</option>
-                <option value="deadline-desc">Deadline: latest first</option>
-                <option value="title-asc">Title: A to Z</option>
-                <option value="source-asc">Source: A to Z</option>
+              <select id="filter-added">
+                <option value="all">Any added date</option>
+                <option value="last-7-days">Last 7 days</option>
+                <option value="last-30-days">Last 30 days</option>
+                <option value="older">Older than 30 days</option>
               </select>
-            </label>
-          </div>
-
-          <div id="message-box" class="message-box info">
-            Loading the latest opportunities.
-          </div>
-
-          <div id="table-view" class="table-wrap">
-            <table>
-              <thead>
-                <tr>
-                  <th>Fit</th>
-                  <th>Opportunity</th>
-                  <th>Source</th>
-                  <th>Added</th>
-                  <th>Deadline</th>
-                  <th>Status</th>
-                  <th>Link</th>
-                </tr>
-              </thead>
-              <tbody id="results-body">
-                <tr class="placeholder-row">
-                  <td colspan="7">No results yet.</td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-
-          <div id="table-pagination" class="table-pagination" hidden>
-            <p id="pagination-summary" class="pagination-summary">Showing 0-0 of 0</p>
-            <div class="pagination-actions">
-              <button id="pagination-prev" class="pagination-button" type="button">Previous</button>
-              <span id="pagination-page" class="pagination-page">Page 1 of 1</span>
-              <button id="pagination-next" class="pagination-button" type="button">Next</button>
+              <select id="filter-link">
+                <option value="all">All links</option>
+                <option value="has-link">Has link</option>
+                <option value="no-link">No link</option>
+              </select>
             </div>
-          </div>
 
-          <div id="cards-view" class="cards-grid" hidden></div>
-          </div>
+            <div id="table-view" class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th><button class="table-sort-button active" type="button" data-sort-column="fit">Fit</button></th>
+                    <th><button class="table-sort-button" type="button" data-sort-column="opportunity">Opportunity</button></th>
+                    <th><button class="table-sort-button" type="button" data-sort-column="source">Source</button></th>
+                    <th><button class="table-sort-button" type="button" data-sort-column="added">Added</button></th>
+                    <th><button class="table-sort-button" type="button" data-sort-column="deadline">Deadline</button></th>
+                    <th><button class="table-sort-button" type="button" data-sort-column="status">Status</button></th>
+                    <th><button class="table-sort-button" type="button" data-sort-column="link">Link</button></th>
+                  </tr>
+                </thead>
+                <tbody id="results-body">
+                  <tr class="placeholder-row">
+                    <td colspan="7">No results yet.</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
 
-          <div
-            id="panel-blocked"
-            class="tab-panel"
-            role="tabpanel"
-            aria-labelledby="tab-blocked"
-            hidden
-          >
-            <div class="results-header">
-              <div>
-                <p class="section-label">Other sources</p>
-                <h2>Not Integrated Yet</h2>
-                <p class="panel-summary">
-                  Manual or unstable sources kept visible without blending them into the live feed.
-                </p>
+            <div id="table-pagination" class="table-pagination" hidden>
+              <p id="pagination-summary" class="pagination-summary">Showing 0-0 of 0</p>
+              <div class="pagination-actions">
+                <button id="pagination-prev" class="pagination-button" type="button">Previous</button>
+                <span id="pagination-page" class="pagination-page">Page 1 of 1</span>
+                <button id="pagination-next" class="pagination-button" type="button">Next</button>
               </div>
             </div>
 
-            <div class="blocked-sources">
-              <article class="blocked-source-card">
-                <h3>UNOPS Jobs</h3>
-                <p>
-                  Good source for communications, photography, videography, and retainer-style
-                  roles across UN operations.
-                </p>
-                <p class="cell-subtext">Status: useful manual source</p>
-                <a
-                  class="result-link"
-                  href="https://www.unops.org/jobs"
-                  target="_blank"
-                  rel="noreferrer"
-                >
-                  Open source
-                </a>
-              </article>
-
-              <article class="blocked-source-card">
-                <h3>UN Careers</h3>
-                <p>
-                  Broad UN system portal for consultancies, communications, public information,
-                  and multimedia-related postings.
-                </p>
-                <p class="cell-subtext">Status: useful manual source</p>
-                <a
-                  class="result-link"
-                  href="https://careers.un.org/"
-                  target="_blank"
-                  rel="noreferrer"
-                >
-                  Open source
-                </a>
-              </article>
-
-              <article class="blocked-source-card">
-                <h3>ILO Jobs</h3>
-                <p>
-                  Relevant for communication and visual-content roles, especially where media,
-                  storytelling, and outreach overlap.
-                </p>
-                <p class="cell-subtext">Status: useful manual source</p>
-                <a
-                  class="result-link"
-                  href="https://jobs.ilo.org/"
-                  target="_blank"
-                  rel="noreferrer"
-                >
-                  Open source
-                </a>
-              </article>
-
-              <article class="blocked-source-card">
-                <h3>WHO Procurement</h3>
-                <p>
-                  Useful procurement reference point. WHO tenders often route through UNGM, but
-                  this page is still useful for supplier guidance and discovery.
-                </p>
-                <p class="cell-subtext">Status: useful manual source</p>
-                <a
-                  class="result-link"
-                  href="https://www.who.int/redirect-pages/footer/about-us/procurement"
-                  target="_blank"
-                  rel="noreferrer"
-                >
-                  Open source
-                </a>
-              </article>
-
-              <article class="blocked-source-card">
-                <h3>UNICEF Careers</h3>
-                <p>
-                  The public jobs site is currently protected by AWS WAF challenge pages for
-                  server-side requests, so the Vercel backend cannot fetch it reliably.
-                </p>
-                <p class="cell-subtext">Status: blocked by anti-bot protection</p>
-                <a
-                  class="result-link"
-                  href="https://jobs.unicef.org/careers/"
-                  target="_blank"
-                  rel="noreferrer"
-                >
-                  Open source
-                </a>
-              </article>
-            </div>
+            <div id="cards-view" class="cards-grid" hidden></div>
           </div>
         </section>
       </main>
     </div>
+
+    <aside id="sources-drawer" class="sources-drawer" hidden aria-labelledby="sources-drawer-title">
+      <div id="sources-drawer-backdrop" class="sources-drawer__backdrop"></div>
+      <div class="sources-drawer__panel">
+        <div class="sources-drawer__header">
+          <div>
+            <p class="section-label">Resources</p>
+            <h2 id="sources-drawer-title">Sources & Links</h2>
+            <p class="panel-summary">
+              Live and manual sources that are relevant to Fairpicture's media-focused tender scan.
+            </p>
+          </div>
+          <button id="sources-close" class="ghost-button" type="button">Close</button>
+        </div>
+        <div id="source-health" class="source-health" hidden></div>
+        <div class="blocked-sources">
+          <article class="blocked-source-card">
+            <h3>Welthungerhilfe Tenders</h3>
+            <p>Humanitarian NGO tender page with public listings. This source is now part of the live tender feed and still passes through the same media-focused keyword filter.</p>
+            <p class="cell-subtext">Status: live source now tracked</p>
+            <a class="result-link" href="https://www.welthungerhilfe.org/tenders" target="_blank" rel="noreferrer">Open source</a>
+          </article>
+          <article class="blocked-source-card">
+            <h3>Aid-LINK Tenders</h3>
+            <p>Humanitarian procurement platform focused on aid-agency tenders. Relevant for manual discovery, but the public site is more commercial and harder to scrape cleanly.</p>
+            <p class="cell-subtext">Status: useful manual source</p>
+            <a class="result-link" href="https://tenders.aid-link.com/tenders" target="_blank" rel="noreferrer">Open source</a>
+          </article>
+          <article class="blocked-source-card">
+            <h3>NGOtenders</h3>
+            <p>Niche NGO and UN opportunity board that can surface procurement notices closer to our humanitarian scope than the broad global tender aggregators.</p>
+            <p class="cell-subtext">Status: useful manual source</p>
+            <a class="result-link" href="https://ngotenders.net/jobs/" target="_blank" rel="noreferrer">Open source</a>
+          </article>
+          <article class="blocked-source-card">
+            <h3>UNOPS Jobs</h3>
+            <p>Good source for communications, photography, videography, and retainer-style roles across UN operations.</p>
+            <p class="cell-subtext">Status: useful manual source</p>
+            <a class="result-link" href="https://www.unops.org/jobs" target="_blank" rel="noreferrer">Open source</a>
+          </article>
+          <article class="blocked-source-card">
+            <h3>UN Careers</h3>
+            <p>Broad UN system portal for consultancies, communications, public information, and multimedia-related postings.</p>
+            <p class="cell-subtext">Status: useful manual source</p>
+            <a class="result-link" href="https://careers.un.org/" target="_blank" rel="noreferrer">Open source</a>
+          </article>
+          <article class="blocked-source-card">
+            <h3>ILO Jobs</h3>
+            <p>Relevant for communication and visual-content roles, especially where media, storytelling, and outreach overlap.</p>
+            <p class="cell-subtext">Status: useful manual source</p>
+            <a class="result-link" href="https://jobs.ilo.org/" target="_blank" rel="noreferrer">Open source</a>
+          </article>
+          <article class="blocked-source-card">
+            <h3>WHO Procurement</h3>
+            <p>Useful procurement reference point. WHO tenders often route through UNGM, but this page is still useful for supplier guidance and discovery.</p>
+            <p class="cell-subtext">Status: useful manual source</p>
+            <a class="result-link" href="https://www.who.int/redirect-pages/footer/about-us/procurement" target="_blank" rel="noreferrer">Open source</a>
+          </article>
+          <article class="blocked-source-card">
+            <h3>UNICEF Careers</h3>
+            <p>The public jobs site is currently protected by AWS WAF challenge pages for server-side requests, so the Vercel backend cannot fetch it reliably.</p>
+            <p class="cell-subtext">Status: blocked by anti-bot protection</p>
+            <a class="result-link" href="https://jobs.unicef.org/careers/" target="_blank" rel="noreferrer">Open source</a>
+          </article>
+        </div>
+      </div>
+    </aside>
 
     <div id="detail-modal" class="detail-modal" hidden>
       <div id="detail-backdrop" class="detail-modal__backdrop"></div>
@@ -347,85 +497,191 @@
         aria-labelledby="detail-title"
       >
         <div class="detail-modal__header">
-          <div>
-            <p id="detail-kicker" class="section-label">Opportunity detail</p>
-            <h3 id="detail-title">Opportunity</h3>
+          <div class="detail-modal__topbar">
+            <p id="detail-kicker" class="detail-modal__kicker">1 of 1 · Opportunity Detail</p>
+            <div class="detail-modal__top-actions">
+              <button
+                id="detail-prev"
+                class="detail-icon-button"
+                type="button"
+                title="Previous (↑)"
+                aria-label="Previous opportunity"
+              >
+                <svg viewBox="0 0 20 20" aria-hidden="true">
+                  <path d="M5.75 11.25 10 7l4.25 4.25" />
+                </svg>
+              </button>
+              <button
+                id="detail-next"
+                class="detail-icon-button"
+                type="button"
+                title="Next (↓)"
+                aria-label="Next opportunity"
+              >
+                <svg viewBox="0 0 20 20" aria-hidden="true">
+                  <path d="M5.75 8.75 10 13l4.25-4.25" />
+                </svg>
+              </button>
+              <button
+                id="detail-close"
+                class="detail-icon-button detail-icon-button--close"
+                type="button"
+                title="Close (Esc)"
+                aria-label="Close details"
+              >
+                <svg viewBox="0 0 20 20" aria-hidden="true">
+                  <path d="m6 6 8 8M14 6l-8 8" />
+                </svg>
+              </button>
+            </div>
           </div>
-          <button id="detail-close" class="detail-close" type="button" aria-label="Close details">
-            Close
-          </button>
+
+          <div class="detail-modal__title-block">
+            <p id="detail-context-line" class="detail-modal__context-line">Organization · Country · Raw ID</p>
+            <h2 id="detail-title">Opportunity</h2>
+          </div>
+
+          <div class="detail-modal__meta-row">
+            <span id="detail-fit" class="detail-badge detail-badge--fit">0% Low fit</span>
+            <span id="detail-status" class="detail-badge detail-badge--status">Live</span>
+            <span id="detail-source" class="detail-source-tag">Source</span>
+            <a
+              id="detail-title-link"
+              class="detail-open-button"
+              href="#"
+              target="_blank"
+              rel="noreferrer"
+              hidden
+            >
+              <svg viewBox="0 0 16 16" aria-hidden="true">
+                <path d="M9.5 2H14v4.5h-1.5v-2L7.1 9.9 6 8.8 11.4 3.5h-1.9V2ZM3 4h4v1.5H4.5v6h6V9H12v4H3V4Z"></path>
+              </svg>
+              <span>Open posting</span>
+            </a>
+          </div>
         </div>
 
         <div class="detail-modal__body">
-          <div class="detail-modal__summary">
-            <span id="detail-fit" class="fit-score fit-score--medium">
-              <strong>0%</strong>
-              <span>Fit</span>
-            </span>
-            <span id="detail-source" class="type-tag">Source</span>
-          </div>
-
           <dl class="detail-modal__meta">
-            <div>
-              <dt>Organization</dt>
-              <dd id="detail-organization">—</dd>
-            </div>
-            <div>
-              <dt>Countries</dt>
-              <dd id="detail-countries">—</dd>
-            </div>
-            <div>
+            <div class="detail-meta-cell">
               <dt>Deadline</dt>
               <dd id="detail-deadline">—</dd>
             </div>
-            <div>
+            <div class="detail-meta-cell">
               <dt>Type</dt>
               <dd id="detail-type">—</dd>
             </div>
-            <div>
-              <dt>Status</dt>
-              <dd id="detail-status">Live</dd>
+            <div class="detail-meta-cell">
+              <dt>Organization</dt>
+              <dd id="detail-organization">—</dd>
             </div>
-            <div>
-              <dt>Current notes</dt>
-              <dd id="detail-existing-notes">No notes yet.</dd>
+            <div class="detail-meta-cell">
+              <dt>Country</dt>
+              <dd id="detail-countries">—</dd>
+            </div>
+            <div class="detail-meta-cell">
+              <dt>Added</dt>
+              <dd id="detail-added">—</dd>
+            </div>
+            <div class="detail-meta-cell">
+              <dt>Source</dt>
+              <dd id="detail-source-meta">—</dd>
             </div>
           </dl>
 
           <div class="detail-modal__actions">
             <label class="detail-form-field">
-              <span>Ops notes</span>
+              <span>Ops notes <em>(optional)</em></span>
               <textarea
                 id="detail-notes"
                 rows="5"
-                placeholder="Add why this was applied, not relevant, or not interesting."
+                placeholder="Add context: why we're applying, key contacts, relevant experience…"
               ></textarea>
             </label>
 
-            <p id="detail-action-help" class="cell-subtext">
-              Notes are required for Applied, Not interested, Not relevant, and Expired.
-            </p>
-
-            <div class="detail-modal__buttons">
-              <button id="detail-action-applied" class="primary-button primary-button--small" type="button">
-                Mark Applied
-              </button>
-              <button id="detail-action-expired" class="mini-action-button" type="button">
-                Expired
-              </button>
-              <button id="detail-action-not-interested" class="mini-action-button" type="button">
-                Not interested
-              </button>
-              <button id="detail-action-not-relevant" class="mini-action-button" type="button">
-                Not relevant
-              </button>
-              <button id="detail-action-reset" class="mini-action-button mini-action-button--secondary" type="button">
-                Return to live
-              </button>
+            <div class="detail-form-field">
+              <span>Move to</span>
+              <div class="detail-state-grid" role="group" aria-label="Move tender to a new state">
+                <button id="detail-state-live" class="detail-state-button" type="button" data-detail-target-state="live">
+                  <svg viewBox="0 0 16 16" aria-hidden="true">
+                    <circle cx="8" cy="8" r="2.75" />
+                  </svg>
+                  <span>Live</span>
+                </button>
+                <button id="detail-state-reviewed" class="detail-state-button" type="button" data-detail-target-state="reviewed">
+                  <!-- Eye icon — "we've seen this" -->
+                  <svg viewBox="0 0 16 16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M1.5 8s2.5-5 6.5-5 6.5 5 6.5 5-2.5 5-6.5 5-6.5-5-6.5-5Z"/>
+                    <circle cx="8" cy="8" r="2"/>
+                  </svg>
+                  <span>Reviewed</span>
+                </button>
+                <button id="detail-state-applied" class="detail-state-button" type="button" data-detail-target-state="applied">
+                  <svg viewBox="0 0 16 16" aria-hidden="true">
+                    <path d="m3.75 8.25 2.6 2.6 5.9-5.7" />
+                  </svg>
+                  <span>Applied</span>
+                </button>
+                <button id="detail-state-missed" class="detail-state-button" type="button" data-detail-target-state="missed">
+                  <svg viewBox="0 0 16 16" aria-hidden="true">
+                    <path d="m5 5 6 6M11 5l-6 6" />
+                  </svg>
+                  <span>Missed</span>
+                </button>
+              </div>
+              <select id="detail-target-state" class="visually-hidden" aria-hidden="true" tabindex="-1">
+                <option value="live">Live</option>
+                <option value="reviewed">Reviewed</option>
+                <option value="applied">Applied</option>
+                <option value="missed">Missed</option>
+              </select>
+              <p id="detail-target-help" class="detail-form-field__hint">Currently live — select a new state to update.</p>
             </div>
 
-            <a id="detail-link" class="result-link" href="#" target="_blank" rel="noreferrer">
-              Open posting
+            <label id="detail-missed-field" class="detail-form-field detail-form-field--reason">
+              <span>Missed reason <strong>*</strong></span>
+              <div class="detail-select-shell">
+                <select id="detail-missed-reason">
+                  <option value="">Select a reason</option>
+                  <option value="expired">Expired</option>
+                  <option value="not_relevant">Not relevant</option>
+                  <option value="not_interested">We are not interested</option>
+                  <option value="duplicate">Duplicate</option>
+                </select>
+                <span class="detail-select-shell__icon" aria-hidden="true">
+                  <svg viewBox="0 0 20 20">
+                    <path d="M5.25 7.5 10 12.25 14.75 7.5" />
+                  </svg>
+                </span>
+              </div>
+              <p class="detail-form-field__hint">Required when moving to Missed.</p>
+            </label>
+          </div>
+        </div>
+
+        <div class="detail-modal__footer">
+          <p id="detail-action-help" class="detail-modal__info">
+            <svg viewBox="0 0 16 16" aria-hidden="true">
+              <path d="M8 2.5a5.5 5.5 0 1 0 0 11 5.5 5.5 0 0 0 0-11Zm0 3a.75.75 0 1 1 0 1.5A.75.75 0 0 1 8 5.5Zm1 5H7V7.5h2v3Z"></path>
+            </svg>
+            <span>Missed requires a reason. Notes are optional. Press <kbd>Esc</kbd> to close without saving.</span>
+          </p>
+
+          <div class="detail-modal__buttons">
+            <button id="detail-action-save" class="detail-primary-button" type="button">
+              Update status
+            </button>
+            <a
+              id="detail-link"
+              class="detail-secondary-button"
+              href="#"
+              target="_blank"
+              rel="noreferrer"
+            >
+              <svg viewBox="0 0 16 16" aria-hidden="true">
+                <path d="M9.5 2H14v4.5h-1.5v-2L7.1 9.9 6 8.8 11.4 3.5h-1.9V2ZM3 4h4v1.5H4.5v6h6V9H12v4H3V4Z"></path>
+              </svg>
+              <span>Source</span>
             </a>
           </div>
         </div>
@@ -459,23 +715,32 @@
           <div class="notification-settings__grid">
             <label class="table-control notification-settings__field">
               <span>Recipient emails</span>
-              <textarea
-                id="notification-emails"
-                rows="3"
-                placeholder="name@fairpicture.org, team@fairpicture.org"
-              ></textarea>
+              <div id="notification-emails" class="chip-input" aria-live="polite">
+                <div id="notification-email-chips" class="chip-input__list"></div>
+                <input
+                  id="notification-email-input"
+                  class="chip-input__field"
+                  type="email"
+                  inputmode="email"
+                  placeholder="Type an email and press Enter"
+                />
+              </div>
+              <p id="notification-email-error" class="field-help" hidden></p>
             </label>
 
             <label class="table-control notification-settings__field">
               <span>Alert before expiry</span>
-              <input
-                id="notification-expiry-days"
-                type="number"
-                min="0"
-                max="30"
-                step="1"
-                placeholder="2"
-              />
+              <div class="unit-input">
+                <input
+                  id="notification-expiry-days"
+                  type="number"
+                  min="0"
+                  max="30"
+                  step="1"
+                  placeholder="2"
+                />
+                <span class="unit-input__suffix">days</span>
+              </div>
             </label>
 
             <label class="table-control notification-settings__field">
@@ -522,13 +787,15 @@
               </button>
             </div>
             <p class="cell-subtext">
-              Postmark credentials stay server-side. The sender email must be valid in your Postmark account.
+              Emails are sent through your configured mail provider. Contact your administrator to update sender credentials.
             </p>
           </div>
         </div>
       </aside>
     </div>
 
-    <script src="./app.js?v=20260404-5"></script>
+    <div id="toast" class="toast" hidden></div>
+
+    <script src="./app.js?v=20260413-5"></script>
   </body>
 </html>

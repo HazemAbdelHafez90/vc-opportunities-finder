@@ -3,26 +3,29 @@ from __future__ import annotations
 import json
 from http.server import BaseHTTPRequestHandler
 
-from api._lib import AuthError, get_authenticated_user, get_notification_settings, save_notification_settings
+from api._lib import (
+    AuthError,
+    admin_users_exist,
+    create_or_update_admin_user,
+    get_authenticated_user,
+)
 
 
 class handler(BaseHTTPRequestHandler):
-    def do_GET(self):
-        try:
-            get_authenticated_user(self.headers)
-            self.write_json({"settings": get_notification_settings()}, cache_control="no-store")
-        except AuthError as exc:
-            self.write_json({"error": str(exc)}, status=401, cache_control="no-store")
-        except Exception as exc:  # pragma: no cover
-            self.write_json({"error": str(exc)}, status=502, cache_control="no-store")
-
     def do_POST(self):
         try:
-            get_authenticated_user(self.headers)
+            if admin_users_exist():
+                user = get_authenticated_user(self.headers)
+                if user.get("role") != "admin":
+                    raise AuthError("Only an admin can rotate the bootstrap account.")
+
             content_length = int(self.headers.get("Content-Length", "0"))
             payload = json.loads(self.rfile.read(content_length) or b"{}")
+            email = payload.get("email")
+            password = payload.get("password")
+            user = create_or_update_admin_user(email, password)
             self.write_json(
-                {"settings": save_notification_settings(payload)},
+                {"user": {"email": user.get("email"), "role": user.get("role") or "admin"}},
                 cache_control="no-store",
             )
         except AuthError as exc:

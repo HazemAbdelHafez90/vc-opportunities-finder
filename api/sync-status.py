@@ -3,17 +3,20 @@ from __future__ import annotations
 import json
 from http.server import BaseHTTPRequestHandler
 
-from api._lib import get_latest_sync_run, serialize_sync_run
+from api._lib import AuthError, get_authenticated_user, get_latest_sync_run, serialize_sync_run
 
 
 class handler(BaseHTTPRequestHandler):
     def do_GET(self):
         try:
+            get_authenticated_user(self.headers)
             sync = serialize_sync_run(get_latest_sync_run())
             self.write_json(
                 {"sync": sync, "sources": sync.get("sourceResults") or []},
                 cache_control="no-store",
             )
+        except AuthError as exc:
+            self.write_json({"error": str(exc)}, status=401, cache_control="no-store")
         except Exception as exc:  # pragma: no cover
             self.write_json({"error": str(exc)}, status=502, cache_control="no-store")
 

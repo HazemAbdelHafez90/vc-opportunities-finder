@@ -3,13 +3,16 @@ from __future__ import annotations
 import json
 from http.server import BaseHTTPRequestHandler
 
-from api._lib import run_refresh_sync
+from api._lib import AuthError, get_authenticated_user, run_refresh_sync
 
 
 class handler(BaseHTTPRequestHandler):
     def do_POST(self):
         try:
+            get_authenticated_user(self.headers)
             self.write_json(run_refresh_sync())
+        except AuthError as exc:
+            self.write_json({"error": str(exc)}, status=401)
         except Exception as exc:  # pragma: no cover
             status = 409 if "already running" in str(exc).lower() else 502
             self.write_json({"error": str(exc)}, status=status)

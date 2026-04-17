@@ -6,6 +6,7 @@ Internal Fairpicture tool for discovering media-related opportunities from:
 - UNDP Procurement
 - UNGM
 - ICIMOD
+- Welthungerhilfe
 
 The app now uses Supabase as its cache and read layer:
 
@@ -13,6 +14,8 @@ The app now uses Supabase as its cache and read layer:
 - the UI shows `Last synced X ago`
 - clicking `Refresh Results` fetches live sources, recalculates fit scores, upserts into Supabase, and reloads the table
 - expired items stay in the database with `status = expired` and are hidden from the main UI
+- browser access is protected with Supabase email/password sign-in
+- API routes require a valid Supabase session token and can optionally enforce a team email allowlist
 
 ## Architecture
 
@@ -32,6 +35,8 @@ API routes:
   reads and saves email notification settings for the sync job
 - `api/test-notification.py`
   sends a manual Postmark test email using the current notification settings
+- `api/auth-config.py`
+  returns the public Supabase auth config needed by the browser sign-in flow
 - `api/_lib.py`
   shared source fetchers, fit scoring, normalization, and Supabase REST helpers
 
@@ -75,7 +80,9 @@ In Supabase:
 You need these exact environment variables:
 
 - `SUPABASE_URL`
+- `SUPABASE_ANON_KEY`
 - `SUPABASE_SERVICE_ROLE_KEY`
+- `TEAM_ALLOWED_EMAILS` (optional but recommended)
 - `POSTMARK_SERVER_TOKEN`
 - `POSTMARK_FROM_EMAIL`
 - `POSTMARK_FROM_NAME` (optional)
@@ -86,7 +93,9 @@ From the project directory:
 
 ```bash
 vercel env add SUPABASE_URL
+vercel env add SUPABASE_ANON_KEY
 vercel env add SUPABASE_SERVICE_ROLE_KEY
+vercel env add TEAM_ALLOWED_EMAILS
 vercel env add POSTMARK_SERVER_TOKEN
 vercel env add POSTMARK_FROM_EMAIL
 vercel env add POSTMARK_FROM_NAME
@@ -120,8 +129,11 @@ If you only run a static file server, the frontend will load but the API routes 
   `fairpicture-tenderbot2026-20srf`
 - ReliefWeb requires an approved app name:
   [https://apidoc.reliefweb.int/parameters#appname](https://apidoc.reliefweb.int/parameters#appname)
-- Cross-source deduplication is not implemented yet
-- Anyone can trigger refresh
+- Cross-source deduplication now merges matching tenders into one row and keeps the matched source list on that record
+- access should be limited to invited users in Supabase Auth
+- disable public signup in Supabase: `Authentication` → `Providers` → `Email` and turn off self sign-up
+- create users from Supabase via `Authentication` → `Users` → `Invite user`
+- if `TEAM_ALLOWED_EMAILS` is set, the backend rejects any signed-in email not on that allowlist
 - The refresh endpoint includes a simple running-sync guard to reduce duplicate source fetches
 - Notification recipient emails, sender override, and expiry lead time are configurable in the app UI and stored in Supabase
 - New-tender emails send once per tender; about-to-expire alerts send once per tender for the currently configured lead time; expired-tender alerts send once when an item moves to expired

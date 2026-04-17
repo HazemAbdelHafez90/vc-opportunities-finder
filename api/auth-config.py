@@ -3,17 +3,20 @@ from __future__ import annotations
 import json
 from http.server import BaseHTTPRequestHandler
 
-from api._lib import AuthError, clear_managed_opportunity_actions, get_authenticated_user
+from api._lib import get_supabase_public_env
 
 
 class handler(BaseHTTPRequestHandler):
-    def do_POST(self):
+    def do_GET(self):
         try:
-            get_authenticated_user(self.headers)
-            cleared_count = clear_managed_opportunity_actions()
-            self.write_json({"clearedCount": cleared_count}, cache_control="no-store")
-        except AuthError as exc:
-            self.write_json({"error": str(exc)}, status=401, cache_control="no-store")
+            supabase_url, supabase_anon_key = get_supabase_public_env()
+            self.write_json(
+                {
+                    "supabaseUrl": supabase_url,
+                    "supabaseAnonKey": supabase_anon_key,
+                },
+                cache_control="no-store",
+            )
         except Exception as exc:  # pragma: no cover
             self.write_json({"error": str(exc)}, status=502, cache_control="no-store")
 

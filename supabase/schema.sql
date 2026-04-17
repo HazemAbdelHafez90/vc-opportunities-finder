@@ -4,19 +4,22 @@ create table if not exists public.opportunities (
   id uuid primary key default gen_random_uuid(),
   source text not null,
   source_item_id text not null,
+  canonical_key text,
   title text not null,
   organization text,
   countries jsonb not null default '[]'::jsonb,
   deadline timestamptz null,
   type text,
   link text,
+  matched_sources jsonb not null default '[]'::jsonb,
   fit_score integer not null default 0,
   fit_label text not null default 'Low fit',
   fit_reasons jsonb not null default '[]'::jsonb,
-  action_status text null check (action_status in ('applied', 'not_interested', 'not_relevant')),
+  action_status text null check (action_status in ('pending', 'applied', 'missed', 'reviewed')),
+  action_reason text null check (action_reason in ('expired', 'not_relevant', 'not_interested', 'duplicate')),
   action_notes text null,
   action_taken_at timestamptz null,
-  status text not null default 'open' check (status in ('open', 'expired')),
+  status text not null default 'open' check (status in ('open', 'expired', 'stale')),
   new_notification_sent_at timestamptz null,
   expiry_notification_sent_at timestamptz null,
   expiry_notification_sent_days integer null,
@@ -30,10 +33,48 @@ create table if not exists public.opportunities (
 );
 
 alter table public.opportunities
+  add column if not exists canonical_key text,
+  add column if not exists matched_sources jsonb not null default '[]'::jsonb,
+  add column if not exists action_reason text null,
   add column if not exists new_notification_sent_at timestamptz null,
   add column if not exists expiry_notification_sent_at timestamptz null,
   add column if not exists expiry_notification_sent_days integer null,
   add column if not exists expired_notification_sent_at timestamptz null;
+
+alter table public.opportunities
+  drop constraint if exists opportunities_action_status_check;
+
+update public.opportunities
+set
+  action_status = case
+    when action_status = 'applied' then 'applied'
+    when action_status in ('not_relevant', 'not_interested') then 'missed'
+    else action_status
+  end,
+  action_reason = case
+    when action_status = 'not_relevant' then 'not_relevant'
+    when action_status = 'not_interested' then 'not_interested'
+    when status = 'expired' and action_reason is null then 'expired'
+    else action_reason
+  end;
+
+alter table public.opportunities
+  drop constraint if exists opportunities_action_reason_check;
+
+alter table public.opportunities
+  drop constraint if exists opportunities_status_check;
+
+alter table public.opportunities
+  add constraint opportunities_action_status_check
+  check (action_status in ('pending', 'applied', 'missed', 'reviewed'));
+
+alter table public.opportunities
+  add constraint opportunities_action_reason_check
+  check (action_reason in ('expired', 'not_relevant', 'not_interested', 'duplicate'));
+
+alter table public.opportunities
+  add constraint opportunities_status_check
+  check (status in ('open', 'expired', 'stale'));
 
 create table if not exists public.sync_runs (
   id uuid primary key default gen_random_uuid(),
@@ -70,6 +111,16 @@ create table if not exists public.notification_settings (
   updated_at timestamptz not null default now()
 );
 
+create table if not exists public.admin_users (
+  id uuid primary key default gen_random_uuid(),
+  email text not null unique,
+  password_hash text not null,
+  role text not null default 'admin' check (role in ('admin')),
+  is_active boolean not null default true,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
 alter table public.notification_settings
   add column if not exists enabled boolean not null default true,
   add column if not exists new_tender_enabled boolean not null default true,
@@ -81,6 +132,25 @@ alter table public.notification_settings
   add column if not exists created_at timestamptz not null default now(),
   add column if not exists updated_at timestamptz not null default now();
 
+alter table public.admin_users
+  add column if not exists email text,
+  add column if not exists password_hash text,
+  add column if not exists role text not null default 'admin',
+  add column if not exists is_active boolean not null default true,
+  add column if not exists created_at timestamptz not null default now(),
+  add column if not exists updated_at timestamptz not null default now();
+
+alter table public.admin_users
+  alter column email set not null,
+  alter column password_hash set not null;
+
+alter table public.admin_users
+  drop constraint if exists admin_users_role_check;
+
+alter table public.admin_users
+  add constraint admin_users_role_check
+  check (role in ('admin'));
+
 alter table public.notification_settings
   drop constraint if exists notification_settings_expiry_alert_days_check;
 
@@ -89,6 +159,7 @@ alter table public.notification_settings
   check (expiry_alert_days >= 0 and expiry_alert_days <= 30);
 
 create index if not exists opportunities_status_idx on public.opportunities (status);
+create index if not exists opportunities_canonical_key_idx on public.opportunities (canonical_key);
 create index if not exists opportunities_action_status_idx on public.opportunities (action_status);
 create index if not exists opportunities_fit_score_idx on public.opportunities (fit_score desc);
 create index if not exists opportunities_deadline_idx on public.opportunities (deadline asc);
@@ -96,6 +167,7 @@ create index if not exists opportunities_new_notification_sent_idx on public.opp
 create index if not exists opportunities_expiry_notification_sent_idx on public.opportunities (expiry_notification_sent_at);
 create index if not exists sync_runs_started_at_idx on public.sync_runs (started_at desc);
 create index if not exists sync_run_sources_sync_run_id_idx on public.sync_run_sources (sync_run_id, finished_at desc);
+create index if not exists admin_users_email_idx on public.admin_users (email);
 
 create or replace function public.set_updated_at()
 returns trigger
@@ -119,10 +191,17 @@ before update on public.notification_settings
 for each row
 execute function public.set_updated_at();
 
+drop trigger if exists admin_users_set_updated_at on public.admin_users;
+create trigger admin_users_set_updated_at
+before update on public.admin_users
+for each row
+execute function public.set_updated_at();
+
 alter table public.opportunities enable row level security;
 alter table public.sync_runs enable row level security;
 alter table public.sync_run_sources enable row level security;
 alter table public.notification_settings enable row level security;
+alter table public.admin_users enable row level security;
 
 drop policy if exists "service role only opportunities" on public.opportunities;
 create policy "service role only opportunities"
@@ -148,6 +227,13 @@ with check (auth.role() = 'service_role');
 drop policy if exists "service role only notification_settings" on public.notification_settings;
 create policy "service role only notification_settings"
 on public.notification_settings
+for all
+using (auth.role() = 'service_role')
+with check (auth.role() = 'service_role');
+
+drop policy if exists "service role only admin_users" on public.admin_users;
+create policy "service role only admin_users"
+on public.admin_users
 for all
 using (auth.role() = 'service_role')
 with check (auth.role() = 'service_role');

@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+import base64
+import binascii
 import hashlib
+import hmac
 import json
 import os
 import re
@@ -22,6 +25,15 @@ UNDP_RSS_URL = "https://procurement-notices.undp.org/rss_feeds/rss.xml"
 RELIEFWEB_URL = "https://api.reliefweb.int/v2/jobs"
 UNGM_SEARCH_URL = "https://www.ungm.org/Public/Notice/Search"
 ICIMOD_POSTS_URL = "https://www.icimod.org/wp-json/wp/v2/posts"
+WELTHUNGERHILFE_TENDERS_URL = "https://www.welthungerhilfe.org/tenders"
+SAVE_THE_CHILDREN_TENDERS_URL = "https://www.savethechildren.net/tenders"
+PLAN_TENDERS_URL = "https://plan-international.org/calls-tender/"
+CAF_TENDERS_URL = "https://www.cafonline.com/inside-caf/about-us/tenders/tenders-tab/"
+CAF_TENDER_INDEX_URLS = [
+    "https://www.cafonline.com/inside-caf/about-us/tenders/tenders-tab/",
+    "https://www.cafonline.com/en/inside-caf/about-us/tenders/tenders-tab/",
+    "https://www.cafonline.com/inside-caf/about-us/official-documents/tenders/",
+]
 
 DEFAULT_APPNAME = "fairpicture-tenderbot2026-20srf"
 DEFAULT_KEYWORDS = [
@@ -41,7 +53,21 @@ DEFAULT_KEYWORDS = [
     "content production",
     "visual storytelling",
 ]
-MANAGED_SOURCES = ["ReliefWeb", "UNDP Procurement", "UNGM", "ICIMOD"]
+OPEN_STATUSES = {"open", "stale"}
+MANAGED_SOURCES = [
+    "ReliefWeb",
+    "UNDP Procurement",
+    "UNGM",
+    "ICIMOD",
+    "Welthungerhilfe",
+]
+SOURCE_PRIORITY = {
+    "ICIMOD": 1,
+    "UNDP Procurement": 2,
+    "UNGM": 3,
+    "ReliefWeb": 4,
+    "Welthungerhilfe": 5,
+}
 RUNNING_SYNC_STALE_MINUTES = 15
 POSTMARK_API_URL = "https://api.postmarkapp.com/email"
 DEFAULT_NOTIFICATION_SETTINGS = {
@@ -53,6 +79,15 @@ DEFAULT_NOTIFICATION_SETTINGS = {
     "senderEmail": "",
     "expiryAlertDays": 2,
 }
+
+
+class AuthError(RuntimeError):
+    """Raised when a request does not have a valid authorized user."""
+
+
+ADMIN_SESSION_PREFIX = "fpadm"
+ADMIN_HASH_ITERATIONS = 600_000
+DEFAULT_SUPERADMIN_EMAIL = "admin@fairpicture.org"
 
 DEFAULT_HEADERS = {
     "User-Agent": (
@@ -102,6 +137,269 @@ def get_supabase_env() -> tuple[str, str]:
         )
 
     return supabase_url, service_role_key
+
+
+def get_supabase_public_env() -> tuple[str, str]:
+    supabase_url = (os.getenv("SUPABASE_URL") or "").rstrip("/")
+    anon_key = os.getenv("SUPABASE_ANON_KEY") or ""
+
+    if not supabase_url or not anon_key:
+        raise RuntimeError(
+            "Supabase auth is not configured. Set SUPABASE_URL and "
+            "SUPABASE_ANON_KEY in the deployment environment."
+        )
+
+    return supabase_url, anon_key
+
+
+def get_allowed_team_emails() -> set[str]:
+    raw_value = os.getenv("TEAM_ALLOWED_EMAILS") or ""
+    values = re.split(r"[\s,;]+", raw_value.strip())
+    return {value.lower() for value in values if value}
+
+
+def get_authenticated_user(headers) -> dict[str, Any]:
+    authorization = headers.get("Authorization", "")
+    scheme, _, token = authorization.partition(" ")
+
+    if scheme.lower() != "bearer" or not token.strip():
+        raise AuthError("Missing bearer token.")
+
+    if token.startswith(f"{ADMIN_SESSION_PREFIX}."):
+        user = verify_admin_session_token(token.strip())
+        if user:
+            return user
+        raise AuthError("Invalid or expired admin session.")
+
+    supabase_url, anon_key = get_supabase_public_env()
+
+    try:
+        user = request_json(
+            f"{supabase_url}/auth/v1/user",
+            headers={
+                "apikey": anon_key,
+                "Authorization": f"Bearer {token.strip()}",
+            },
+        )
+    except Exception as exc:
+        raise AuthError("Invalid or expired session.") from exc
+
+    email = str(user.get("email") or "").strip().lower()
+    if not email:
+        raise AuthError("Authenticated user email is missing.")
+
+    allowed_emails = get_allowed_team_emails()
+    if allowed_emails and email not in allowed_emails:
+        raise AuthError("This account is not allowed to access the workspace.")
+
+    return user
+
+
+def get_admin_session_secret() -> bytes:
+    explicit_secret = (os.getenv("ADMIN_SESSION_SECRET") or "").strip()
+    if explicit_secret:
+        return explicit_secret.encode("utf-8")
+
+    service_role_key = (os.getenv("SUPABASE_SERVICE_ROLE_KEY") or "").strip()
+    if service_role_key:
+        return service_role_key.encode("utf-8")
+
+    anon_key = (os.getenv("SUPABASE_ANON_KEY") or "").strip()
+    if anon_key:
+        return anon_key.encode("utf-8")
+
+    password_hash = (os.getenv("ADMIN_PASSWORD_HASH") or "").strip()
+    if password_hash:
+        return password_hash.encode("utf-8")
+
+    return b"fairpicture-admin-session"
+
+
+def normalize_admin_email(value: str | None) -> str:
+    return str(value or "").strip().lower()
+
+
+def get_env_admin_user() -> dict[str, Any] | None:
+    email = normalize_admin_email(os.getenv("ADMIN_EMAIL") or DEFAULT_SUPERADMIN_EMAIL)
+    password_hash = str(os.getenv("ADMIN_PASSWORD_HASH") or "").strip()
+    if not email or not password_hash:
+        return None
+    return {
+        "id": "env-admin",
+        "email": email,
+        "password_hash": password_hash,
+        "is_active": True,
+        "role": "admin",
+    }
+
+
+def admin_users_exist() -> bool:
+    if get_env_admin_user():
+        return True
+
+    try:
+        rows = supabase_request(
+            "GET",
+            "admin_users",
+            query={"select": "id", "limit": "1"},
+        ) or []
+    except Exception:
+        return False
+    return bool(rows)
+
+
+def get_admin_user_by_email(email: str) -> dict[str, Any] | None:
+    normalized_email = normalize_admin_email(email)
+    if not normalized_email:
+        return None
+
+    env_admin_user = get_env_admin_user()
+    if env_admin_user and env_admin_user.get("email") == normalized_email:
+        return env_admin_user
+
+    try:
+        rows = supabase_request(
+            "GET",
+            "admin_users",
+            query={
+                "email": f"eq.{normalized_email}",
+                "select": "id,email,password_hash,is_active,role,created_at,updated_at",
+                "limit": "1",
+            },
+        ) or []
+    except Exception:
+        return None
+    return rows[0] if rows else None
+
+
+def encode_password_hash(password: str) -> str:
+    salt = os.urandom(16)
+    digest = hashlib.pbkdf2_hmac(
+        "sha256",
+        password.encode("utf-8"),
+        salt,
+        ADMIN_HASH_ITERATIONS,
+    )
+    return (
+        f"pbkdf2_sha256${ADMIN_HASH_ITERATIONS}$"
+        f"{base64.urlsafe_b64encode(salt).decode('ascii')}$"
+        f"{base64.urlsafe_b64encode(digest).decode('ascii')}"
+    )
+
+
+def verify_password_hash(password: str, encoded_hash: str | None) -> bool:
+    parts = str(encoded_hash or "").split("$")
+    if len(parts) != 4 or parts[0] != "pbkdf2_sha256":
+        return False
+
+    try:
+        iterations = int(parts[1])
+        salt = base64.urlsafe_b64decode(parts[2].encode("ascii"))
+        expected = base64.urlsafe_b64decode(parts[3].encode("ascii"))
+    except (ValueError, binascii.Error):
+        return False
+
+    candidate = hashlib.pbkdf2_hmac(
+        "sha256",
+        password.encode("utf-8"),
+        salt,
+        iterations,
+    )
+    return hmac.compare_digest(candidate, expected)
+
+
+def build_admin_session_token(email: str, role: str = "admin", expires_in_seconds: int = 60 * 60 * 24 * 14) -> str:
+    payload = {
+        "email": normalize_admin_email(email),
+        "role": role or "admin",
+        "exp": int(datetime.now(timezone.utc).timestamp()) + expires_in_seconds,
+    }
+    payload_bytes = json.dumps(payload, separators=(",", ":"), sort_keys=True).encode("utf-8")
+    encoded_payload = base64.urlsafe_b64encode(payload_bytes).decode("ascii").rstrip("=")
+    signature = hmac.new(
+        get_admin_session_secret(),
+        encoded_payload.encode("ascii"),
+        hashlib.sha256,
+    ).digest()
+    encoded_signature = base64.urlsafe_b64encode(signature).decode("ascii").rstrip("=")
+    return f"{ADMIN_SESSION_PREFIX}.{encoded_payload}.{encoded_signature}"
+
+
+def verify_admin_session_token(token: str) -> dict[str, Any] | None:
+    parts = str(token or "").split(".")
+    if len(parts) != 3 or parts[0] != ADMIN_SESSION_PREFIX:
+        return None
+
+    encoded_payload = parts[1]
+    encoded_signature = parts[2]
+    expected_signature = hmac.new(
+        get_admin_session_secret(),
+        encoded_payload.encode("ascii"),
+        hashlib.sha256,
+    ).digest()
+
+    try:
+        supplied_signature = base64.urlsafe_b64decode(f"{encoded_signature}==".encode("ascii"))
+        payload = json.loads(base64.urlsafe_b64decode(f"{encoded_payload}==".encode("ascii")).decode("utf-8"))
+    except (ValueError, binascii.Error, json.JSONDecodeError):
+        return None
+
+    if not hmac.compare_digest(expected_signature, supplied_signature):
+        return None
+
+    if int(payload.get("exp") or 0) <= int(datetime.now(timezone.utc).timestamp()):
+        return None
+
+    user = get_admin_user_by_email(payload.get("email"))
+    if not user or not user.get("is_active"):
+        return None
+
+    return {
+        "email": user.get("email"),
+        "role": user.get("role") or "admin",
+        "authType": "admin",
+    }
+
+
+def create_or_update_admin_user(email: str, password: str) -> dict[str, Any]:
+    normalized_email = normalize_admin_email(email)
+    if not normalized_email:
+        raise RuntimeError("Admin email is required.")
+    if len(password or "") < 12:
+        raise RuntimeError("Admin password must be at least 12 characters.")
+
+    rows = supabase_request(
+        "POST",
+        "admin_users",
+        query={"on_conflict": "email"},
+        payload=[{
+            "email": normalized_email,
+            "password_hash": encode_password_hash(password),
+            "is_active": True,
+            "role": "admin",
+        }],
+        prefer="resolution=merge-duplicates,return=representation",
+    ) or []
+    if not rows:
+        raise RuntimeError("Could not save the admin user.")
+    return rows[0]
+
+
+def authenticate_admin_user(email: str, password: str) -> dict[str, Any]:
+    user = get_admin_user_by_email(email)
+    if not user or not user.get("is_active"):
+        raise AuthError("Admin account not found.")
+    if not verify_password_hash(password, user.get("password_hash")):
+        raise AuthError("Invalid email or password.")
+
+    return {
+        "token": build_admin_session_token(user.get("email") or ""),
+        "user": {
+            "email": user.get("email"),
+            "role": user.get("role") or "admin",
+            "authType": "admin",
+        },
+    }
 
 
 def request_json(url: str, data: bytes | None = None, headers: dict[str, str] | None = None) -> Any:
@@ -182,11 +480,11 @@ def get_open_opportunities_from_db(limit: int = 200) -> list[dict[str, Any]]:
         "opportunities",
         query={
             "select": (
-                "id,source,source_item_id,title,organization,countries,deadline,type,link,"
-                "fit_score,fit_label,fit_reasons,action_status,action_notes,action_taken_at,"
+                "id,source,source_item_id,canonical_key,matched_sources,title,organization,countries,deadline,type,link,"
+                "fit_score,fit_label,fit_reasons,action_status,action_reason,action_notes,action_taken_at,"
                 "status,first_seen_at,last_seen_at,last_synced_at"
             ),
-            "status": "eq.open",
+            "status": f"in.({','.join(sorted(OPEN_STATUSES))})",
             "order": "fit_score.desc,deadline.asc.nullslast,last_seen_at.desc",
             "limit": str(limit),
         },
@@ -200,8 +498,8 @@ def get_managed_opportunities_from_db(limit: int = 400) -> list[dict[str, Any]]:
         "opportunities",
         query={
             "select": (
-                "id,source,source_item_id,title,organization,countries,deadline,type,link,"
-                "fit_score,fit_label,fit_reasons,action_status,action_notes,action_taken_at,"
+                "id,source,source_item_id,canonical_key,matched_sources,title,organization,countries,deadline,type,link,"
+                "fit_score,fit_label,fit_reasons,action_status,action_reason,action_notes,action_taken_at,"
                 "status,first_seen_at,last_seen_at,last_synced_at"
             ),
             "source": in_filter(MANAGED_SOURCES),
@@ -514,38 +812,48 @@ def run_refresh_sync(*, triggered_by: str = "manual") -> dict[str, Any]:
     try:
         live_items, source_results = fetch_live_items(DEFAULT_APPNAME, DEFAULT_KEYWORDS)
         now_iso = datetime.now(timezone.utc).isoformat()
-        open_rows = [to_db_row(item, now_iso) for item in live_items]
         existing_rows = get_existing_rows()
+        existing_rows, collapsed_duplicate_count = collapse_existing_duplicates(existing_rows)
+        open_rows = [to_db_row(item, now_iso) for item in live_items]
         existing_by_key = {
             (row.get("source"), row.get("source_item_id")): row for row in existing_rows
         }
+        existing_by_canonical = {
+            row.get("canonical_key"): row for row in existing_rows if row.get("canonical_key")
+        }
 
+        new_rows = []
+        updated_rows = []
+        matched_existing_ids: set[str] = set()
         new_count = 0
-        updated_count = 0
+        updated_count = collapsed_duplicate_count
         for row in open_rows:
-            key = (row["source"], row["source_item_id"])
-            if key in existing_by_key:
-                row["first_seen_at"] = existing_by_key[key].get("first_seen_at") or row["first_seen_at"]
+            existing = existing_by_key.get((row["source"], row["source_item_id"]))
+            if not existing and row.get("canonical_key"):
+                existing = existing_by_canonical.get(row["canonical_key"])
+
+            if existing:
+                if existing.get("id"):
+                    matched_existing_ids.add(str(existing.get("id")))
+                updated_rows.append(merge_row_with_existing(row, existing))
                 updated_count += 1
             else:
+                new_rows.append(row)
                 new_count += 1
 
         upserted_rows = []
-        if open_rows:
-            upserted_rows = supabase_request(
-                "POST",
-                "opportunities",
-                query={"on_conflict": "source,source_item_id"},
-                payload=open_rows,
-                prefer="resolution=merge-duplicates,return=representation",
-            ) or []
+        if updated_rows:
+            upserted_rows.extend(update_existing_opportunities(updated_rows))
+        if new_rows:
+            upserted_rows.extend(create_new_opportunities(new_rows))
 
+        archive_missing_rows(existing_rows, matched_existing_ids, source_results, now_iso)
         backfill_missing_ungm_deadlines(now_iso)
         expire_old_rows(now_iso)
         try:
             notification_summary = send_notifications(
                 upserted_rows=upserted_rows,
-                existing_by_key=existing_by_key,
+                existing_rows=existing_rows,
                 now_iso=now_iso,
             )
         except Exception as exc:
@@ -605,19 +913,20 @@ def run_refresh_sync(*, triggered_by: str = "manual") -> dict[str, Any]:
 
 
 def get_existing_rows() -> list[dict[str, Any]]:
-    return supabase_request(
+    rows = supabase_request(
         "GET",
         "opportunities",
         query={
             "select": (
-                "id,source,source_item_id,status,deadline,first_seen_at,new_notification_sent_at,"
+                "id,source,source_item_id,canonical_key,matched_sources,status,deadline,first_seen_at,new_notification_sent_at,"
                 "expiry_notification_sent_at,expiry_notification_sent_days,title,organization,countries,"
-                "type,link,fit_score,fit_label,fit_reasons,action_status,action_notes,action_taken_at,"
-                "last_synced_at"
+                "type,link,fit_score,fit_label,fit_reasons,action_status,action_reason,action_notes,action_taken_at,"
+                "last_seen_at,last_synced_at,expired_notification_sent_at"
             ),
             "source": in_filter(MANAGED_SOURCES),
         },
     ) or []
+    return [hydrate_existing_row(row) for row in rows]
 
 
 def get_ungm_rows_missing_deadline(limit: int = 50) -> list[dict[str, Any]]:
@@ -667,7 +976,7 @@ def expire_old_rows(now_iso: str) -> None:
         "opportunities",
         query={
             "select": "id,deadline,status",
-            "status": "eq.open",
+            "status": f"in.({','.join(sorted(OPEN_STATUSES))})",
             "source": in_filter(MANAGED_SOURCES),
         },
     ) or []
@@ -691,10 +1000,47 @@ def expire_old_rows(now_iso: str) -> None:
     )
 
 
+def archive_missing_rows(
+    existing_rows: list[dict[str, Any]],
+    matched_existing_ids: set[str],
+    source_results: list[dict[str, Any]],
+    now_iso: str,
+) -> int:
+    completed_sources = {
+        compact_space(String(result.get("source")))
+        for result in source_results
+        if compact_space(String(result.get("status"))).lower() == "completed"
+    }
+    stale_ids = []
+    for row in existing_rows:
+        row_id = row.get("id")
+        if not row_id:
+            continue
+        if compact_space(String(row.get("source"))) not in completed_sources:
+            continue
+        if str(row_id) in matched_existing_ids:
+            continue
+        if compact_space(String(row.get("status"))).lower() != "open":
+            continue
+        stale_ids.append(str(row_id))
+
+    if not stale_ids:
+        return 0
+
+    supabase_request(
+        "PATCH",
+        "opportunities",
+        query={"id": in_filter(stale_ids, quote=False)},
+        payload={"status": "stale", "last_synced_at": now_iso},
+        prefer="return=minimal",
+    )
+    return len(stale_ids)
+
+
 def send_notifications(
     *,
     upserted_rows: list[dict[str, Any]],
-    existing_by_key: dict[tuple[Any, Any], dict[str, Any]],
+    existing_rows: list[dict[str, Any]],
     now_iso: str,
 ) -> dict[str, Any]:
     settings = get_notification_settings()
@@ -728,7 +1074,7 @@ def send_notifications(
         summary["skippedReason"] = "No sender email is configured."
         return summary
 
-    new_rows = get_new_rows_for_notification(upserted_rows, existing_by_key)
+    new_rows = get_new_rows_for_notification(upserted_rows, existing_rows)
     expiry_rows = get_expiring_rows_for_notification(settings["expiryAlertDays"])
     expired_rows = get_expired_rows_for_notification()
 
@@ -815,12 +1161,20 @@ def send_notifications(
 
 def get_new_rows_for_notification(
     upserted_rows: list[dict[str, Any]],
-    existing_by_key: dict[tuple[Any, Any], dict[str, Any]],
+    existing_rows: list[dict[str, Any]],
 ) -> list[dict[str, Any]]:
+    existing_by_key = {
+        (row.get("source"), row.get("source_item_id")): row for row in existing_rows
+    }
+    existing_by_canonical = {
+        row.get("canonical_key"): row for row in existing_rows if row.get("canonical_key")
+    }
     results = []
     for row in upserted_rows:
         key = (row.get("source"), row.get("source_item_id"))
         existing = existing_by_key.get(key)
+        if not existing and row.get("canonical_key"):
+            existing = existing_by_canonical.get(row.get("canonical_key"))
         if existing:
             continue
         if row.get("new_notification_sent_at"):
@@ -835,8 +1189,8 @@ def get_expiring_rows_for_notification(expiry_alert_days: int) -> list[dict[str,
         "opportunities",
         query={
             "select": (
-                "id,source,source_item_id,title,organization,countries,deadline,type,link,"
-                "fit_score,fit_label,fit_reasons,action_status,action_notes,action_taken_at,status,"
+                "id,source,source_item_id,matched_sources,title,organization,countries,deadline,type,link,"
+                "fit_score,fit_label,fit_reasons,action_status,action_reason,action_notes,action_taken_at,status,"
                 "first_seen_at,last_seen_at,last_synced_at,expiry_notification_sent_at,expiry_notification_sent_days"
             ),
             "status": "eq.open",
@@ -868,8 +1222,8 @@ def get_expired_rows_for_notification() -> list[dict[str, Any]]:
         "opportunities",
         query={
             "select": (
-                "id,source,source_item_id,title,organization,countries,deadline,type,link,"
-                "fit_score,fit_label,fit_reasons,action_status,action_notes,action_taken_at,status,"
+                "id,source,source_item_id,matched_sources,title,organization,countries,deadline,type,link,"
+                "fit_score,fit_label,fit_reasons,action_status,action_reason,action_notes,action_taken_at,status,"
                 "first_seen_at,last_seen_at,last_synced_at,expired_notification_sent_at"
             ),
             "status": "eq.expired",
@@ -936,15 +1290,23 @@ def build_notification_email_html(
 
     cards = "".join(build_notification_card_html(row, palette["pill"], palette["pill_text"]) for row in rows)
     return (
-        "<!doctype html><html><body style=\"margin:0;background:#f3efe9;font-family:Arial,sans-serif;color:#17191d;\">"
-        "<div style=\"max-width:880px;margin:0 auto;padding:28px 18px;\">"
-        f"<div style=\"background:#fffaf6;border:1px solid rgba(23,25,29,0.08);border-radius:28px;overflow:hidden;box-shadow:0 24px 48px rgba(15,18,24,0.08);\">"
+        "<!doctype html>"
+        "<html>"
+        "<head>"
+        "<meta http-equiv=\"Content-Type\" content=\"text/html; charset=utf-8\">"
+        "<meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\">"
+        "<meta name=\"color-scheme\" content=\"light\">"
+        "<meta name=\"supported-color-schemes\" content=\"light\">"
+        "</head>"
+        "<body bgcolor=\"#f3efe9\" style=\"margin:0;background-color:#f3efe9;color:#17191d;font-family:Arial,sans-serif;color-scheme:light;supported-color-schemes:light;\">"
+        "<div style=\"max-width:880px;margin:0 auto;padding:28px 18px;background-color:#f3efe9;color:#17191d;\">"
+        f"<div style=\"background-color:#fffaf6;background:#fffaf6;border:1px solid rgba(23,25,29,0.08);border-radius:28px;overflow:hidden;box-shadow:0 24px 48px rgba(15,18,24,0.08);\">"
         f"<div style=\"padding:28px 28px 18px;background:linear-gradient(135deg,{palette['accent']} 0%,#17191d 100%);color:#fffaf6;\">"
         "<div style=\"font-size:12px;letter-spacing:0.18em;text-transform:uppercase;font-weight:700;opacity:0.78;\">Fairpicture Tender Radar</div>"
         f"<h1 style=\"margin:14px 0 10px;font-size:36px;line-height:1.05;\">{escape_html(title)}</h1>"
         f"<p style=\"margin:0;font-size:18px;line-height:1.6;max-width:44rem;opacity:0.92;\">{escape_html(intro)}</p>"
         "</div>"
-        "<div style=\"padding:22px 22px 28px;\">"
+        "<div style=\"padding:22px 22px 28px;background-color:#fffaf6;color:#17191d;\">"
         f"<table role=\"presentation\" width=\"100%\" cellspacing=\"0\" cellpadding=\"0\" style=\"border-collapse:separate;border-spacing:0 14px;\">{cards}</table>"
         "</div></div></div></body></html>"
     )
@@ -956,7 +1318,7 @@ def build_notification_email_text(title: str, rows: list[dict[str, Any]]) -> str
 
 def build_notification_card_html(row: dict[str, Any], pill_bg: str, pill_text: str) -> str:
     title = escape_html(row.get("title") or "Untitled opportunity")
-    source = escape_html(row.get("source") or "Source")
+    source = escape_html(format_source_label(row))
     organization = escape_html(row.get("organization") or "N/A")
     deadline = escape_html(format_deadline_label(row.get("deadline")))
     fit_score = row.get("fit_score") or 0
@@ -993,7 +1355,7 @@ def build_notification_card_html(row: dict[str, Any], pill_bg: str, pill_text: s
 
 def build_notification_item_html(row: dict[str, Any]) -> str:
     title = escape_html(row.get("title") or "Untitled opportunity")
-    source = escape_html(row.get("source") or "Source")
+    source = escape_html(format_source_label(row))
     organization = escape_html(row.get("organization") or "N/A")
     deadline = escape_html(format_deadline_label(row.get("deadline")))
     fit_label = escape_html(f"{row.get('fit_label') or 'Fit'} ({row.get('fit_score') or 0}%)")
@@ -1012,7 +1374,7 @@ def build_notification_item_html(row: dict[str, Any]) -> str:
 def build_notification_item_text(row: dict[str, Any]) -> str:
     lines = [
         row.get("title") or "Untitled opportunity",
-        f"Source: {row.get('source') or 'Source'}",
+        f"Source: {format_source_label(row)}",
         f"Organization: {row.get('organization') or 'N/A'}",
         f"Deadline: {format_deadline_label(row.get('deadline'))}",
         f"Fit: {row.get('fit_label') or 'Fit'} ({row.get('fit_score') or 0}%)",
@@ -1074,6 +1436,9 @@ def escape_html(value: str) -> str:
 
 
 def serialize_opportunity_row(row: dict[str, Any]) -> dict[str, Any]:
+    matched_sources = normalize_sources(row.get("matched_sources"))
+    action_status = normalize_action_status(row.get("action_status"))
+    missed_reason = normalize_action_reason(row.get("action_reason"), row.get("action_status"), row.get("status"))
     return {
         "id": row.get("id"),
         "title": row.get("title") or "Untitled opportunity",
@@ -1083,10 +1448,13 @@ def serialize_opportunity_row(row: dict[str, Any]) -> dict[str, Any]:
         "type": row.get("type") or "Opportunity",
         "link": row.get("link") or "",
         "source": row.get("source") or "Source",
+        "sourceList": matched_sources or [row.get("source") or "Source"],
+        "sourceCount": len(matched_sources or [row.get("source") or "Source"]),
         "fitScore": row.get("fit_score") or 0,
         "fitLabel": row.get("fit_label") or "Low fit",
         "fitReasons": row.get("fit_reasons") or [],
-        "actionStatus": row.get("action_status"),
+        "actionStatus": action_status,
+        "missedReason": missed_reason,
         "actionNotes": row.get("action_notes") or "",
         "actionTakenAt": row.get("action_taken_at"),
         "status": row.get("status") or "open",
@@ -1097,11 +1465,42 @@ def serialize_opportunity_row(row: dict[str, Any]) -> dict[str, Any]:
 
 def update_opportunity_action(
     opportunity_id: str,
-    action_status: str | None,
+    target_state: str,
+    action_reason: str | None = None,
     action_notes: str | None = None,
 ) -> dict[str, Any] | None:
     normalized_notes = compact_space(action_notes) or None
-    is_manual_expired = action_status == "expired_manual"
+    normalized_target_state = compact_space(String(target_state)).lower() or "live"
+    normalized_action_status = None
+    next_status = "open"
+    normalized_action_reason = None
+
+    if normalized_target_state == "reviewed":
+        normalized_action_status = "reviewed"
+    elif normalized_target_state == "pending":
+        normalized_action_status = "pending"
+    elif normalized_target_state == "applied":
+        normalized_action_status = "applied"
+    elif normalized_target_state == "missed":
+        normalized_action_status = "missed"
+        normalized_action_reason = normalize_action_reason(action_reason, "missed", "open")
+    elif normalized_target_state == "expired":
+        next_status = "expired"
+        normalized_action_reason = "expired"
+    elif normalized_target_state == "archived":
+        next_status = "stale"
+
+    existing_rows = supabase_request(
+        "GET",
+        "opportunities",
+        query={
+            "id": f"eq.{opportunity_id}",
+            "select": "id,status",
+            "limit": "1",
+        },
+    ) or []
+    if not existing_rows:
+        return None
 
     rows = supabase_request(
         "PATCH",
@@ -1109,18 +1508,17 @@ def update_opportunity_action(
         query={
             "id": f"eq.{opportunity_id}",
             "select": (
-                "id,source,source_item_id,title,organization,countries,deadline,type,link,"
-                "fit_score,fit_label,fit_reasons,action_status,action_notes,action_taken_at,"
+                "id,source,source_item_id,canonical_key,matched_sources,title,organization,countries,deadline,type,link,"
+                "fit_score,fit_label,fit_reasons,action_status,action_reason,action_notes,action_taken_at,"
                 "status,first_seen_at,last_seen_at,last_synced_at"
             ),
         },
         payload={
-            "status": "expired" if is_manual_expired else "open",
-            "action_status": None if is_manual_expired else (action_status or None),
+            "status": next_status,
+            "action_status": normalized_action_status,
+            "action_reason": normalized_action_reason,
             "action_notes": normalized_notes,
-            "action_taken_at": datetime.now(timezone.utc).isoformat()
-            if (action_status or normalized_notes)
-            else None,
+            "action_taken_at": datetime.now(timezone.utc).isoformat() if (normalized_target_state != "live" or normalized_notes) else None,
         },
         prefer="return=representation",
     ) or []
@@ -1139,6 +1537,7 @@ def clear_managed_opportunity_actions() -> int:
         },
         payload={
             "action_status": None,
+            "action_reason": None,
             "action_notes": None,
             "action_taken_at": None,
         },
@@ -1149,15 +1548,18 @@ def clear_managed_opportunity_actions() -> int:
 
 def to_db_row(item: dict[str, Any], synced_at: str) -> dict[str, Any]:
     fit = get_fit_analysis(item)
+    matched_sources = normalize_sources(item.get("matchedSources") or [item.get("source")])
     return {
         "source": item["source"],
         "source_item_id": build_source_item_id(item),
+        "canonical_key": build_canonical_key(item),
         "title": item["title"],
         "organization": item.get("organization") or "N/A",
         "countries": item.get("countryList") or [],
         "deadline": normalize_deadline_for_db(item.get("deadline")),
         "type": item.get("type") or "Opportunity",
         "link": item.get("link") or "",
+        "matched_sources": matched_sources,
         "fit_score": fit["score"],
         "fit_label": fit["label"],
         "fit_reasons": fit["reasons"],
@@ -1172,6 +1574,339 @@ def to_db_row(item: dict[str, Any], synced_at: str) -> dict[str, Any]:
 def build_source_item_id(item: dict[str, Any]) -> str:
     stable_value = item.get("link") or f"{item.get('source')}::{item.get('title')}"
     return hashlib.sha256(stable_value.encode("utf-8")).hexdigest()[:32]
+
+
+def build_canonical_key(item: dict[str, Any]) -> str:
+    return hashlib.sha256(build_canonical_basis(item).encode("utf-8")).hexdigest()[:40]
+
+
+def build_canonical_key_from_row(row: dict[str, Any]) -> str:
+    return hashlib.sha256(build_canonical_basis(row).encode("utf-8")).hexdigest()[:40]
+
+
+def build_canonical_basis(payload: dict[str, Any]) -> str:
+    normalized_title = normalize_canonical_text(payload.get("title"))
+    normalized_deadline = normalize_deadline_for_db(payload.get("deadline")) or ""
+    normalized_org = normalize_canonical_text(payload.get("organization"))
+    if normalized_deadline:
+        return "||".join([normalized_title, normalized_deadline])
+    return "||".join([normalized_title, normalized_org])
+
+
+def normalize_canonical_text(value: Any) -> str:
+    text = compact_space(String(value)).lower()
+    text = re.sub(r"[^a-z0-9]+", " ", text)
+    return compact_space(text)
+
+
+def normalize_sources(values: Any) -> list[str]:
+    if isinstance(values, list):
+        candidates = values
+    elif values is None:
+        candidates = []
+    else:
+        candidates = [values]
+
+    sources = []
+    seen = set()
+    for candidate in candidates:
+        source = compact_space(String(candidate))
+        if not source or source in seen:
+            continue
+        sources.append(source)
+        seen.add(source)
+    return sorted(sources, key=lambda source: (SOURCE_PRIORITY.get(source, 999), source.lower()))
+
+
+def hydrate_existing_row(row: dict[str, Any]) -> dict[str, Any]:
+    hydrated = dict(row)
+    hydrated["canonical_key"] = row.get("canonical_key") or build_canonical_key_from_row(row)
+    hydrated["matched_sources"] = normalize_sources(row.get("matched_sources") or [row.get("source")])
+    hydrated["action_status"] = normalize_action_status(row.get("action_status"))
+    hydrated["action_reason"] = normalize_action_reason(
+        row.get("action_reason"),
+        row.get("action_status"),
+        row.get("status"),
+    )
+    return hydrated
+
+
+def normalize_action_status(value: Any) -> str | None:
+    normalized = compact_space(String(value)).lower()
+    if normalized == "reviewed":
+        return "reviewed"
+    if normalized == "pending":
+        return "pending"
+    if normalized == "applied":
+        return "applied"
+    if normalized in {"missed", "not_relevant", "not_interested"}:
+        return "missed"
+    return None
+
+
+def normalize_action_reason(reason: Any, action_status: Any = None, status: Any = None) -> str | None:
+    normalized_reason = compact_space(String(reason)).lower()
+    if normalized_reason in {"expired", "not_relevant", "not_interested", "duplicate"}:
+        return normalized_reason
+
+    normalized_status = compact_space(String(status)).lower()
+    normalized_action_status = compact_space(String(action_status)).lower()
+    if normalized_action_status == "not_relevant":
+        return "not_relevant"
+    if normalized_action_status == "not_interested":
+        return "not_interested"
+    if normalized_status == "expired":
+        return "expired"
+    return None
+
+
+def format_source_label(row: dict[str, Any]) -> str:
+    sources = normalize_sources(row.get("matched_sources"))
+    if not sources:
+        return row.get("source") or "Source"
+    if len(sources) == 1:
+        return sources[0]
+    return f"{sources[0]} +{len(sources) - 1}"
+
+
+def merge_duplicate_items(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    grouped: dict[str, list[dict[str, Any]]] = {}
+    for item in items:
+        grouped.setdefault(build_canonical_key(item), []).append(item)
+
+    merged_items = []
+    for grouped_items in grouped.values():
+        primary = choose_preferred_item(grouped_items)
+        merged = dict(primary)
+        merged["countryList"] = merge_country_lists(grouped_items)
+        merged["matchedSources"] = normalize_sources([item.get("source") for item in grouped_items])
+        merged["deadline"] = pick_preferred_value(grouped_items, "deadline")
+        merged["type"] = pick_preferred_value(grouped_items, "type") or merged.get("type") or "Opportunity"
+        merged["organization"] = pick_preferred_value(grouped_items, "organization") or merged.get("organization") or "N/A"
+        merged["link"] = pick_preferred_link(grouped_items)
+        merged_items.append(merged)
+
+    merged_items.sort(key=sort_key)
+    return merged_items
+
+
+def choose_preferred_item(items: list[dict[str, Any]]) -> dict[str, Any]:
+    return min(
+        items,
+        key=lambda item: (
+            SOURCE_PRIORITY.get(item.get("source") or "", 999),
+            0 if compact_space(item.get("deadline")) else 1,
+            0 if compact_space(item.get("organization")) else 1,
+            normalize_canonical_text(item.get("title")),
+        ),
+    )
+
+
+def pick_preferred_value(items: list[dict[str, Any]], key: str) -> str | None:
+    for item in sorted(items, key=lambda value: SOURCE_PRIORITY.get(value.get("source") or "", 999)):
+        candidate = compact_space(item.get(key))
+        if candidate:
+            return candidate
+    return None
+
+
+def pick_preferred_link(items: list[dict[str, Any]]) -> str:
+    for item in sorted(items, key=lambda value: SOURCE_PRIORITY.get(value.get("source") or "", 999)):
+        link = compact_space(item.get("link"))
+        if link:
+            return link
+    return ""
+
+
+def merge_country_lists(items: list[dict[str, Any]]) -> list[str]:
+    countries = []
+    seen = set()
+    for item in items:
+        for country in item.get("countryList") or []:
+            normalized = compact_space(country)
+            if not normalized or normalized in seen:
+                continue
+            countries.append(normalized)
+            seen.add(normalized)
+    return countries
+
+
+def collapse_existing_duplicates(rows: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], int]:
+    groups: dict[str, list[dict[str, Any]]] = {}
+    for row in rows:
+        canonical_key = row.get("canonical_key")
+        if canonical_key:
+            groups.setdefault(canonical_key, []).append(row)
+
+    collapsed_count = 0
+    deleted_ids: list[str] = []
+    refreshed_rows: dict[str, dict[str, Any]] = {}
+    for canonical_key, grouped_rows in groups.items():
+        if len(grouped_rows) == 1:
+            refreshed_rows[str(grouped_rows[0].get("id"))] = grouped_rows[0]
+            continue
+
+        primary = choose_primary_existing_row(grouped_rows)
+        merged_row = merge_existing_group(primary, grouped_rows)
+        update_existing_opportunity(merged_row)
+        refreshed_rows[str(primary.get("id"))] = merged_row
+        duplicate_ids = [str(row.get("id")) for row in grouped_rows if row.get("id") != primary.get("id")]
+        deleted_ids.extend(duplicate_ids)
+        collapsed_count += len(duplicate_ids)
+
+    if deleted_ids:
+        delete_opportunities_by_ids(deleted_ids)
+
+    unique_rows = []
+    seen_ids = set()
+    for row in rows:
+        row_id = str(row.get("id"))
+        if row_id in deleted_ids or row_id in seen_ids:
+            continue
+        unique_rows.append(refreshed_rows.get(row_id, row))
+        seen_ids.add(row_id)
+
+    return unique_rows, collapsed_count
+
+
+def choose_primary_existing_row(rows: list[dict[str, Any]]) -> dict[str, Any]:
+    return min(
+        rows,
+        key=lambda row: (
+            0 if row.get("action_status") else 1,
+            0 if row.get("new_notification_sent_at") else 1,
+            parse_sortable_timestamp(row.get("first_seen_at")),
+            SOURCE_PRIORITY.get(row.get("source") or "", 999),
+        ),
+    )
+
+
+def merge_existing_group(primary: dict[str, Any], rows: list[dict[str, Any]]) -> dict[str, Any]:
+    merged = dict(primary)
+    merged["matched_sources"] = normalize_sources(
+        [
+            source
+            for row in rows
+            for source in (row.get("matched_sources") or [row.get("source")])
+        ]
+    )
+    merged["countries"] = merge_country_lists(
+        [{"countryList": row.get("countries") or []} for row in rows]
+    )
+    merged["first_seen_at"] = min(
+        [row.get("first_seen_at") for row in rows if row.get("first_seen_at")] or [primary.get("first_seen_at")]
+    )
+    merged["last_seen_at"] = max(
+        [row.get("last_seen_at") for row in rows if row.get("last_seen_at")] or [primary.get("last_seen_at")]
+    )
+    merged["last_synced_at"] = max(
+        [row.get("last_synced_at") for row in rows if row.get("last_synced_at")] or [primary.get("last_synced_at")]
+    )
+    merged["new_notification_sent_at"] = first_non_empty(row.get("new_notification_sent_at") for row in rows)
+    merged["expiry_notification_sent_at"] = first_non_empty(row.get("expiry_notification_sent_at") for row in rows)
+    merged["expiry_notification_sent_days"] = first_non_empty(row.get("expiry_notification_sent_days") for row in rows)
+    merged["expired_notification_sent_at"] = first_non_empty(row.get("expired_notification_sent_at") for row in rows)
+
+    if not merged.get("action_status"):
+        action_row = choose_latest_action_row(rows)
+        if action_row:
+            merged["action_status"] = normalize_action_status(action_row.get("action_status"))
+            merged["action_reason"] = normalize_action_reason(
+                action_row.get("action_reason"),
+                action_row.get("action_status"),
+                action_row.get("status"),
+            )
+            merged["action_notes"] = action_row.get("action_notes")
+            merged["action_taken_at"] = action_row.get("action_taken_at")
+
+    return merged
+
+
+def choose_latest_action_row(rows: list[dict[str, Any]]) -> dict[str, Any] | None:
+    action_rows = [row for row in rows if row.get("action_status")]
+    if not action_rows:
+        return None
+    return max(action_rows, key=lambda row: parse_sortable_timestamp(row.get("action_taken_at")))
+
+
+def parse_sortable_timestamp(value: Any) -> float:
+    parsed = parse_date(value)
+    return parsed.timestamp() if parsed else float("inf")
+
+
+def first_non_empty(values) -> Any:
+    for value in values:
+        if value not in (None, "", []):
+            return value
+    return None
+
+
+def merge_row_with_existing(row: dict[str, Any], existing: dict[str, Any]) -> dict[str, Any]:
+    merged = dict(row)
+    merged["id"] = existing.get("id")
+    merged["source"] = existing.get("source") or row.get("source")
+    merged["source_item_id"] = existing.get("source_item_id") or row.get("source_item_id")
+    merged["first_seen_at"] = existing.get("first_seen_at") or row.get("first_seen_at")
+    merged["action_status"] = existing.get("action_status")
+    merged["action_reason"] = existing.get("action_reason")
+    merged["action_notes"] = existing.get("action_notes")
+    merged["action_taken_at"] = existing.get("action_taken_at")
+    merged["new_notification_sent_at"] = existing.get("new_notification_sent_at")
+    merged["expiry_notification_sent_at"] = existing.get("expiry_notification_sent_at")
+    merged["expiry_notification_sent_days"] = existing.get("expiry_notification_sent_days")
+    merged["expired_notification_sent_at"] = existing.get("expired_notification_sent_at")
+    merged["matched_sources"] = normalize_sources(
+        (existing.get("matched_sources") or [existing.get("source")]) + (row.get("matched_sources") or [])
+    )
+    return merged
+
+
+def update_existing_opportunities(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    updated = []
+    for row in rows:
+        updated_row = update_existing_opportunity(row)
+        if updated_row:
+            updated.append(updated_row)
+    return updated
+
+
+def update_existing_opportunity(row: dict[str, Any]) -> dict[str, Any] | None:
+    row_id = row.get("id")
+    if not row_id:
+        return None
+    payload = dict(row)
+    payload.pop("id", None)
+    rows = supabase_request(
+        "PATCH",
+        "opportunities",
+        query={"id": f"eq.{row_id}", "select": "*"},
+        payload=payload,
+        prefer="return=representation",
+    ) or []
+    return rows[0] if rows else None
+
+
+def create_new_opportunities(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    return (
+        supabase_request(
+            "POST",
+            "opportunities",
+            payload=rows,
+            prefer="return=representation",
+        )
+        or []
+    )
+
+
+def delete_opportunities_by_ids(opportunity_ids: list[str]) -> None:
+    if not opportunity_ids:
+        return
+    supabase_request(
+        "DELETE",
+        "opportunities",
+        query={"id": in_filter(opportunity_ids, quote=False)},
+        prefer="return=minimal",
+    )
 
 
 def normalize_deadline_for_db(value: str | None) -> str | None:
@@ -1194,6 +1929,7 @@ def fetch_live_items(appname: str, keywords: list[str]) -> tuple[list[dict[str, 
         ("UNDP Procurement", fetch_undp_procurement, (keywords,), {}),
         ("UNGM", fetch_ungm_notices, (keywords,), {}),
         ("ICIMOD", fetch_icimod_announcements, (keywords,), {}),
+        ("Welthungerhilfe", fetch_welthungerhilfe_tenders, (keywords,), {}),
     ]
 
     if appname:
@@ -1213,8 +1949,7 @@ def fetch_live_items(appname: str, keywords: list[str]) -> tuple[list[dict[str, 
         items.extend(result.pop("items", []))
         source_results.append(result)
 
-    items.sort(key=sort_key)
-    return items, source_results
+    return merge_duplicate_items(items), source_results
 
 
 def fetch_source_safely(source_name: str, fetcher, *args, **kwargs) -> dict[str, Any]:
@@ -1504,6 +2239,551 @@ def fetch_icimod_announcements(keywords: list[str]) -> list[dict]:
             deduped[record["link"]] = record
 
     return list(deduped.values())
+
+
+def fetch_welthungerhilfe_tenders(keywords: list[str]) -> list[dict]:
+    html = request_text(WELTHUNGERHILFE_TENDERS_URL)
+    soup = BeautifulSoup(html, "html.parser")
+    items = []
+    seen_links = set()
+
+    for node in soup.select("div.tender__list__item"):
+        title_link = node.select_one(".tender__list__item__title a[href]")
+        title = compact_space(title_link.get_text(" ", strip=True) if title_link else "")
+        link = compact_space(title_link.get("href") if title_link else "")
+
+        client_node = node.select_one(".tender__list__item__client")
+        deadline_node = node.select_one(".tender__list__item__deadline")
+        client_text = compact_space(client_node.get_text(" ", strip=True) if client_node else "")
+        deadline_text = compact_space(deadline_node.get_text(" ", strip=True) if deadline_node else "")
+
+        if not title or not link:
+            continue
+
+        absolute_link = parse.urljoin(WELTHUNGERHILFE_TENDERS_URL, link).split("#", 1)[0]
+        if absolute_link in seen_links:
+            continue
+        seen_links.add(absolute_link)
+
+        deadline = extract_welthungerhilfe_deadline(deadline_text)
+        record = {
+            "title": title,
+            "organization": extract_welthungerhilfe_organization(client_text),
+            "countryList": extract_welthungerhilfe_countries(title, client_text),
+            "deadline": deadline,
+            "type": "Tender",
+            "link": absolute_link,
+            "source": "Welthungerhilfe",
+        }
+
+        if deadline and not is_open_deadline(deadline):
+            continue
+        if not matches_keywords(
+            {**record, "type": f"{record['type']} {client_text} Welthungerhilfe humanitarian NGO"},
+            keywords,
+        ):
+            continue
+
+        items.append(record)
+
+    return items
+
+
+def fetch_save_the_children_tenders(keywords: list[str]) -> list[dict]:
+    html = request_text(SAVE_THE_CHILDREN_TENDERS_URL)
+    soup = BeautifulSoup(html, "html.parser")
+    detail_urls = []
+    seen_urls = set()
+
+    for anchor in soup.select("a[href]"):
+        href = compact_space(anchor.get("href"))
+        if not href:
+            continue
+
+        absolute_url = parse.urljoin(SAVE_THE_CHILDREN_TENDERS_URL, href).split("#", 1)[0]
+        parsed_url = parse.urlparse(absolute_url)
+        if parsed_url.netloc != "www.savethechildren.net":
+            continue
+        if not parsed_url.path.startswith("/tenders/") or parsed_url.path.rstrip("/") == "/tenders":
+            continue
+        if re.search(r"\.(pdf|docx?|xlsx?)$", parsed_url.path, flags=re.IGNORECASE):
+            continue
+        if absolute_url in seen_urls:
+            continue
+
+        seen_urls.add(absolute_url)
+        detail_urls.append(absolute_url)
+
+    items = []
+    for detail_url in detail_urls[:20]:
+        record = parse_save_the_children_tender(detail_url, request_text(detail_url))
+        if not record:
+            continue
+        if record["deadline"] and not is_open_deadline(record["deadline"]):
+            continue
+        content = record.get("_content", "")
+        if not matches_keywords({**record, "type": f"{record['type']} {content}"}, keywords):
+            continue
+        record.pop("_content", None)
+        items.append(record)
+
+    return items
+
+
+def fetch_plan_international_tenders(keywords: list[str]) -> list[dict]:
+    html = request_text(PLAN_TENDERS_URL)
+    soup = BeautifulSoup(html, "html.parser")
+    items = []
+
+    for heading in soup.select("h3"):
+        title = compact_space(heading.get_text(" ", strip=True))
+        if not title:
+            continue
+
+        section_nodes = []
+        for sibling in heading.next_siblings:
+            name = getattr(sibling, "name", None)
+            if name == "h3":
+                break
+            text = compact_space(getattr(sibling, "get_text", lambda *args, **kwargs: "")(" ", strip=True))
+            if text:
+                section_nodes.append(sibling)
+
+        if not section_nodes:
+            continue
+
+        record = parse_plan_international_tender(title, section_nodes)
+        if not record:
+            continue
+        if record["deadline"] and not is_open_deadline(record["deadline"]):
+            continue
+
+        summary = record.pop("_summary", "")
+        if not matches_keywords({**record, "type": f"{record['type']} {summary}"}, keywords):
+            continue
+
+        items.append(record)
+
+    return items
+
+
+def fetch_caf_tenders(keywords: list[str]) -> list[dict]:
+    detail_urls = []
+    seen_urls = set()
+
+    for index_url in CAF_TENDER_INDEX_URLS:
+        html = request_text(index_url)
+        soup = BeautifulSoup(html, "html.parser")
+
+        for anchor in soup.select("a[href]"):
+            href = compact_space(anchor.get("href"))
+            text = compact_space(anchor.get_text(" ", strip=True))
+            if not href:
+                continue
+
+            absolute_url = parse.urljoin(index_url, href).split("#", 1)[0]
+            parsed_url = parse.urlparse(absolute_url)
+            if parsed_url.netloc != "www.cafonline.com":
+                continue
+            if not is_caf_tender_detail_path(parsed_url.path):
+                continue
+            if absolute_url in seen_urls:
+                continue
+            if not text and len(parsed_url.path.rstrip("/").split("/")) <= 6:
+                continue
+
+            seen_urls.add(absolute_url)
+            detail_urls.append(absolute_url)
+
+    items = []
+    for detail_url in detail_urls[:25]:
+        record = parse_caf_tender(detail_url, request_text(detail_url))
+        if not record:
+            continue
+        if record["deadline"] and not is_open_deadline(record["deadline"]):
+            continue
+
+        content = record.pop("_content", "")
+        combined_type = f"{record['type']} {content}".strip()
+        if not matches_keywords({**record, "type": combined_type}, keywords):
+            continue
+        if not looks_like_tender(record["title"], record["type"], content):
+            continue
+        if not looks_like_caf_media_tender(record["title"], content):
+            continue
+
+        items.append(record)
+
+    return items
+
+
+def is_caf_tender_detail_path(path: str) -> bool:
+    normalized_path = path.rstrip("/")
+    allowed_prefixes = [
+        "/inside-caf/about-us/tenders/tenders-tab/",
+        "/en/inside-caf/about-us/tenders/tenders-tab/",
+        "/inside-caf/about-us/official-documents/tenders/",
+        "/en/inside-caf/about-us/official-documents/tenders/",
+    ]
+    disallowed_index_paths = {
+        "/inside-caf/about-us/tenders/tenders-tab",
+        "/en/inside-caf/about-us/tenders/tenders-tab",
+        "/inside-caf/about-us/official-documents/tenders",
+        "/en/inside-caf/about-us/official-documents/tenders",
+    }
+
+    if normalized_path in disallowed_index_paths:
+        return False
+
+    return any(normalized_path.startswith(prefix.rstrip("/")) for prefix in allowed_prefixes)
+
+
+def parse_save_the_children_tender(url: str, html: str) -> dict[str, Any] | None:
+    soup = BeautifulSoup(html, "html.parser")
+    title = extract_save_the_children_title(soup)
+    content = compact_space(soup.get_text(" ", strip=True))
+    if not title or not content:
+        return None
+
+    deadline = extract_save_the_children_deadline(content)
+    country = extract_save_the_children_country(soup, title, content)
+    reference = extract_save_the_children_reference(content)
+
+    return {
+        "title": title,
+        "organization": "Save the Children International",
+        "countryList": [country] if country else [],
+        "deadline": deadline,
+        "type": compact_space(f"Tender {reference}".strip()),
+        "link": url,
+        "source": "Save the Children",
+        "_content": content,
+    }
+
+
+def parse_plan_international_tender(title: str, section_nodes: list[Any]) -> dict[str, Any] | None:
+    text_parts = []
+    link = PLAN_TENDERS_URL
+
+    for node in section_nodes:
+        text = compact_space(getattr(node, "get_text", lambda *args, **kwargs: "")(" ", strip=True))
+        if text:
+            text_parts.append(text)
+
+        if link == PLAN_TENDERS_URL:
+            anchor = node.find("a", href=True) if hasattr(node, "find") else None
+            if anchor:
+                link = parse.urljoin(PLAN_TENDERS_URL, compact_space(anchor.get("href")))
+
+    summary = compact_space(" ".join(text_parts))
+    if not summary:
+        return None
+
+    deadline = extract_plan_international_deadline(summary)
+    reference = extract_plan_international_reference(title, summary)
+    country = extract_plan_international_country(summary)
+
+    return {
+        "title": title,
+        "organization": "Plan International",
+        "countryList": [country] if country else [],
+        "deadline": deadline,
+        "type": compact_space(f"Tender {reference}".strip()),
+        "link": link,
+        "source": "Plan International",
+        "_summary": summary,
+    }
+
+
+def parse_caf_tender(url: str, html: str) -> dict[str, Any] | None:
+    soup = BeautifulSoup(html, "html.parser")
+    title = extract_caf_title(soup)
+    content = compact_space(soup.get_text(" ", strip=True))
+    if not title or not content:
+        return None
+
+    deadline = extract_caf_deadline(content)
+    country = "Egypt" if "6th october city" in normalize_match_text(content) else ""
+    tender_type = "RFP" if "rfp" in normalize_match_text(title) else "Tender"
+
+    return {
+        "title": title,
+        "organization": "CAF",
+        "countryList": [country] if country else [],
+        "deadline": deadline,
+        "type": tender_type,
+        "link": url,
+        "source": "CAF",
+        "_content": content,
+    }
+
+
+def extract_welthungerhilfe_deadline(value: str) -> str | None:
+    match = re.search(
+        r"response deadline(?:\s*\([^)]*\))?\s*:\s*([0-9]{1,2}[./-][0-9]{1,2}[./-][0-9]{4}(?:\s+[0-9]{1,2}:[0-9]{2})?)",
+        normalize_match_text(value),
+        flags=re.IGNORECASE,
+    )
+    if not match:
+        return None
+    return compact_space(match.group(1).replace(".", "-"))
+
+
+def extract_welthungerhilfe_organization(value: str) -> str:
+    cleaned = compact_space(re.sub(r"^contracting authority:\s*", "", value, flags=re.IGNORECASE))
+    return cleaned or "Welthungerhilfe"
+
+
+def extract_welthungerhilfe_countries(title: str, organization: str) -> list[str]:
+    authority = extract_welthungerhilfe_organization(organization)
+    authority_match = re.match(r"welthungerhilfe\s+(.+)", authority, flags=re.IGNORECASE)
+    if authority_match:
+        candidate = compact_space(authority_match.group(1))
+        if candidate and not re.search(r"\be\.?\s*v\.?\b|deutsche\b", candidate, flags=re.IGNORECASE):
+            return [candidate]
+
+    combined = f"{title} {authority}"
+    match = re.search(
+        r"\b("
+        r"Afghanistan|Bangladesh|Burkina Faso|Burundi|Cambodia|Cameroon|Central African Republic|"
+        r"Chad|Colombia|Democratic Republic of Congo|DR Congo|Ethiopia|Haiti|India|Iraq|Jordan|"
+        r"Kenya|Lebanon|Liberia|Malawi|Mali|Mozambique|Myanmar|Nepal|Niger|Nigeria|Pakistan|"
+        r"Palestine|Rwanda|Sierra Leone|Somalia|South Sudan|Sudan|Syria|Tanzania|Thailand|"
+        r"Türkiye|Turkey|Uganda|Ukraine|Yemen|Zambia|Zimbabwe"
+        r")\b",
+        combined,
+        flags=re.IGNORECASE,
+    )
+    return [compact_space(match.group(1))] if match else []
+
+
+def extract_save_the_children_title(soup: BeautifulSoup) -> str:
+    for selector in ("main h1", "main h2", "article h1", "article h2", "h1", "h2"):
+        node = soup.select_one(selector)
+        text = compact_space(node.get_text(" ", strip=True) if node else "")
+        if text:
+            return text
+
+    meta = soup.find("meta", attrs={"property": "og:title"}) or soup.find("meta", attrs={"name": "title"})
+    return compact_space(meta.get("content")) if meta else ""
+
+
+def extract_caf_title(soup: BeautifulSoup) -> str:
+    for selector in ("main h1", "article h1", ".news-title", "h1", "h2"):
+        node = soup.select_one(selector)
+        text = compact_space(node.get_text(" ", strip=True) if node else "")
+        if text:
+            return text
+    return extract_save_the_children_title(soup)
+
+
+def extract_save_the_children_deadline(content: str) -> str | None:
+    date_matches = re.findall(
+        r"\b\d{1,2}\s(?:Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|"
+        r"Jul(?:y)?|Aug(?:ust)?|Sep(?:tember)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)\s\d{4}"
+        r"(?:\s*-\s*\d{1,2}:\d{2}\s*(?:UTC|GMT))?\b",
+        compact_space(content),
+        flags=re.IGNORECASE,
+    )
+    if len(date_matches) >= 2:
+        return date_matches[1]
+    if date_matches:
+        return date_matches[0]
+    return extract_deadline_from_text(content)
+
+
+def extract_plan_international_deadline(content: str) -> str | None:
+    match = re.search(
+        r"Responses should be submitted no later than .*? on ([0-9]{1,2}(?:st|nd|rd|th)?\s+"
+        r"(?:Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|Jul(?:y)?|"
+        r"Aug(?:ust)?|Sep(?:tember)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)\s+[0-9]{4})",
+        content,
+        flags=re.IGNORECASE,
+    )
+    if not match:
+        match = re.search(
+            r"\b([0-9]{1,2}(?:st|nd|rd|th)?\s+"
+            r"(?:Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|Jul(?:y)?|"
+            r"Aug(?:ust)?|Sep(?:tember)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)\s+[0-9]{4})\b",
+            content,
+            flags=re.IGNORECASE,
+        )
+    if not match:
+        return None
+
+    return re.sub(r"(\d)(st|nd|rd|th)\b", r"\1", compact_space(match.group(1)), flags=re.IGNORECASE)
+
+
+def extract_caf_deadline(content: str) -> str | None:
+    normalized_content = normalize_month_name(compact_space(content))
+
+    for label in (
+        "proposal deadline",
+        "submission deadline",
+        "closing date",
+        "closing deadline",
+        "proposal submission deadline",
+    ):
+        match = re.search(
+            rf"{label}\s*[:\-]?\s*([0-9]{{1,2}}\s+"
+            rf"(?:Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|Jul(?:y)?|"
+            rf"Aug(?:ust)?|Sep(?:tember)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)\s+[0-9]{{4}})",
+            normalized_content,
+            flags=re.IGNORECASE,
+        )
+        if match:
+            return compact_space(match.group(1))
+
+    generic_deadline_match = re.search(
+        r"(?<!clarification )(?<!questions )deadline\s*[:\-]?\s*([0-9]{1,2}\s+"
+        r"(?:Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|Jul(?:y)?|"
+        r"Aug(?:ust)?|Sep(?:tember)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)\s+[0-9]{4})",
+        normalized_content,
+        flags=re.IGNORECASE,
+    )
+    if generic_deadline_match:
+        return compact_space(generic_deadline_match.group(1))
+
+    return extract_first_long_date_without_clarification(normalized_content)
+
+
+def extract_save_the_children_country(soup: BeautifulSoup, title: str, content: str) -> str:
+    for selector in ("main a", "article a"):
+        for anchor in soup.select(selector):
+            text = compact_space(anchor.get_text(" ", strip=True))
+            href = compact_space(anchor.get("href"))
+            if not text or not href:
+                continue
+            if text.lower() in {"read more", "downloads", "download"}:
+                continue
+            if href.startswith("/tenders/"):
+                continue
+            if len(text) > 40:
+                continue
+            return text
+
+    title_prefix = compact_space(title.split(" - ", 1)[0])
+    if 1 < len(title_prefix) <= 40 and not re.search(r"\d", title_prefix):
+        return title_prefix
+
+    content_match = re.search(
+        r"\b(?:Worldwide|Afghanistan|Albania|Algeria|Angola|Argentina|Armenia|Australia|Bangladesh|Belgium|"
+        r"Burkina Faso|Burundi|Cambodia|Cameroon|Canada|Chad|Colombia|Côte d[’']Ivoire|Democratic Congo|"
+        r"Egypt|Ethiopia|Geneva|Guatemala|Haiti|India|Indonesia|Iraq|Jordan|Kenya|Kosovo|Laos|Lebanon|"
+        r"Liberia|Malawi|Mali|Mozambique|Myanmar|Nepal|Niger|Nigeria|Pakistan|Peru|Poland|Rwanda|"
+        r"Sierra Leone|Somalia|South Sudan|Sri Lanka|Sudan|Syria|Tanzania|Thailand|Türkiye|Uganda|"
+        r"Ukraine|United Kingdom|United States|Venezuela|Vietnam|Yemen|Zambia|Zimbabwe)\b",
+        content,
+        flags=re.IGNORECASE,
+    )
+    return compact_space(content_match.group(0)) if content_match else ""
+
+
+def extract_plan_international_country(content: str) -> str:
+    match = re.search(
+        r"Plan International ([A-Z][A-Za-z' .()/-]{2,40}?) is inviting interested parties",
+        content,
+        flags=re.IGNORECASE,
+    )
+    if match:
+        return compact_space(match.group(1))
+    return ""
+
+
+def extract_save_the_children_reference(content: str) -> str:
+    match = re.search(
+        r"\b(?:Ref(?:erence)?\.?\s*[:#-]?\s*|Tender Reference:\s*|Reference number\s*)"
+        r"([A-Z0-9][A-Z0-9/&(). _-]{5,})",
+        compact_space(content),
+        flags=re.IGNORECASE,
+    )
+    return compact_space(match.group(1)) if match else ""
+
+
+def extract_plan_international_reference(title: str, content: str) -> str:
+    quoted = re.search(r"[\"“”']([^\"“”']{6,120})[\"“”']", content)
+    if quoted:
+        return compact_space(quoted.group(1))
+
+    match = re.search(
+        r"\b(?:Please use reference|reference number)\s*[\"“”']?([^\"“”'.]{6,120})",
+        content,
+        flags=re.IGNORECASE,
+    )
+    if match:
+        return compact_space(match.group(1))
+
+    return compact_space(title)
+
+
+def extract_first_long_date(content: str) -> str | None:
+    match = re.search(
+        r"\b([0-9]{1,2}\s+"
+        r"(?:Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il|il)?|May|Jun(?:e)?|Jul(?:y)?|"
+        r"Aug(?:ust)?|Sep(?:tember)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)\s+[0-9]{4})\b",
+        content,
+        flags=re.IGNORECASE,
+    )
+    if not match:
+        return None
+    return normalize_month_name(compact_space(match.group(1)))
+
+
+def extract_first_long_date_without_clarification(content: str) -> str | None:
+    for line in re.split(r"[\r\n]+", content):
+        normalized_line = compact_space(line)
+        if not normalized_line:
+            continue
+        if "clarification" in normalized_line.lower():
+            continue
+
+        match = re.search(
+            r"\b([0-9]{1,2}\s+"
+            r"(?:Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|Jul(?:y)?|"
+            r"Aug(?:ust)?|Sep(?:tember)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)\s+[0-9]{4})\b",
+            normalized_line,
+            flags=re.IGNORECASE,
+        )
+        if match:
+            return compact_space(match.group(1))
+
+    return extract_first_long_date(content)
+
+
+def normalize_month_name(value: str) -> str:
+    return compact_space(value).replace(" Avril ", " April ").replace(" avril ", " April ")
+
+
+def looks_like_caf_media_tender(title: str, content: str) -> bool:
+    haystack = normalize_match_text(" ".join([title, content]))
+    positive_terms = [
+        "photography",
+        "videography",
+        "photographer",
+        "videographer",
+        "media",
+        "branding",
+        "marketing",
+        "creative",
+        "visual",
+        "content production",
+        "film",
+    ]
+    negative_terms = [
+        "satellite",
+        "ticketing",
+        "apparel",
+        "insurance",
+        "medical",
+        "vehicle",
+        "it",
+        "erp",
+        "accreditation",
+        "access control",
+        "construction",
+        "security",
+    ]
+    return any(term in haystack for term in positive_terms) and not any(term in haystack for term in negative_terms)
 
 
 def is_ungm_error_page(html: str) -> bool:
