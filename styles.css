@@ -2181,6 +2181,10 @@ body.modal-open {
 }
 
 @media (max-width: 640px) {
+  table {
+    min-width: 0;
+  }
+
   .detail-modal__panel {
     width: 100vw;
   }
