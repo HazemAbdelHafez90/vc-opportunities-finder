@@ -25,7 +25,8 @@
       (function() {
         try {
           var view = localStorage.getItem("fairpicture-opportunities-view");
-          var theme = localStorage.getItem("fairpicture-opportunities-theme") || "dark";
+          var systemDark = window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches;
+          var theme = localStorage.getItem("fairpicture-opportunities-theme") || (systemDark ? "dark" : "light");
           document.documentElement.dataset.theme = theme;
           document.documentElement.dataset.view = view === "cards" ? "cards" : "table";
           document.documentElement.style.colorScheme = theme;
@@ -196,28 +197,28 @@
             <span class="settings-strip__edit" aria-hidden="true">Edit</span>
           </button>
 
-          <div class="stats-grid" aria-label="Opportunity metrics">
-            <article class="stat-card">
-              <p class="stat-card__label">Total Results</p>
-              <strong id="stat-total" class="stat-card__value">0</strong>
-              <p class="stat-card__sub">across all sources</p>
-            </article>
-            <article class="stat-card">
-              <p class="stat-card__label">High Fit</p>
-              <strong id="stat-high-fit" class="stat-card__value stat-card__value--green">0</strong>
-              <p id="stat-high-fit-sub" class="stat-card__sub stat-card__sub--green">↑ 0 new this week</p>
-            </article>
-            <article class="stat-card">
-              <p class="stat-card__label">Expiring Soon</p>
-              <strong id="stat-expiring" class="stat-card__value stat-card__value--amber">0</strong>
-              <p class="stat-card__sub stat-card__sub--amber">within 7 days</p>
-            </article>
-            <article class="stat-card">
-              <p class="stat-card__label">Applied</p>
-              <strong id="stat-applied" class="stat-card__value stat-card__value--blue">0</strong>
-              <p class="stat-card__sub">this quarter</p>
-            </article>
-          </div>
+          <dl class="stats-strip" aria-label="Opportunity metrics">
+            <div class="stats-strip__item">
+              <dt class="stats-strip__label">Total</dt>
+              <dd id="stat-total" class="stats-strip__value">0</dd>
+            </div>
+            <div class="stats-strip__divider" aria-hidden="true"></div>
+            <div class="stats-strip__item">
+              <dt class="stats-strip__label">High fit</dt>
+              <dd id="stat-high-fit" class="stats-strip__value stats-strip__value--green">0</dd>
+              <dd id="stat-high-fit-sub" class="stats-strip__sub stats-strip__sub--green">↑ 0 this week</dd>
+            </div>
+            <div class="stats-strip__divider" aria-hidden="true"></div>
+            <div class="stats-strip__item">
+              <dt class="stats-strip__label">Expiring &lt;7d</dt>
+              <dd id="stat-expiring" class="stats-strip__value stats-strip__value--amber">0</dd>
+            </div>
+            <div class="stats-strip__divider" aria-hidden="true"></div>
+            <div class="stats-strip__item">
+              <dt class="stats-strip__label">Applied</dt>
+              <dd id="stat-applied" class="stats-strip__value stats-strip__value--blue">0</dd>
+            </div>
+          </dl>
         </section>
 
         <section class="results-card">
@@ -295,7 +296,7 @@
               <details class="filter-chip" id="fit-filter-details">
                 <summary id="fit-filter-chip">Fit <svg viewBox="0 0 10 10"><path d="M2 3.5 5 6.5 8 3.5"></path></svg></summary>
                 <div class="filter-chip__panel">
-                  <select id="filter-fit">
+                  <select id="filter-fit" aria-label="Filter by fit level">
                     <option value="all">All fit</option>
                     <option value="high">High fit</option>
                     <option value="medium">Medium fit</option>
@@ -307,7 +308,7 @@
               <details class="filter-chip" id="deadline-filter-details">
                 <summary id="deadline-filter-chip">Deadline <svg viewBox="0 0 10 10"><path d="M2 3.5 5 6.5 8 3.5"></path></svg></summary>
                 <div class="filter-chip__panel">
-                  <select id="filter-deadline">
+                  <select id="filter-deadline" aria-label="Filter by deadline">
                     <option value="all">Any deadline</option>
                     <option value="overdue">Expired</option>
                     <option value="today">Today</option>
@@ -322,7 +323,7 @@
               <details class="filter-chip" id="source-filter-details">
                 <summary id="source-filter-chip">Source <svg viewBox="0 0 10 10"><path d="M2 3.5 5 6.5 8 3.5"></path></svg></summary>
                 <div class="filter-chip__panel">
-                  <select id="filter-source">
+                  <select id="filter-source" aria-label="Filter by source">
                     <option value="all">All sources</option>
                     <option value="ReliefWeb">ReliefWeb</option>
                     <option value="UNDP Procurement">UNDP Procurement</option>
@@ -336,7 +337,7 @@
               <details class="filter-chip" id="status-filter-details">
                 <summary id="status-filter-chip">Status <svg viewBox="0 0 10 10"><path d="M2 3.5 5 6.5 8 3.5"></path></svg></summary>
                 <div class="filter-chip__panel">
-                  <select id="filter-status">
+                  <select id="filter-status" aria-label="Filter by status">
                     <option value="all">All statuses</option>
                     <option value="live">Live</option>
                     <option value="expiring-soon">Expiring soon</option>
@@ -369,16 +370,16 @@
             </div>
 
             <div class="filters-hidden" hidden>
-              <select id="filter-opportunity">
+              <select id="filter-opportunity" aria-label="Filter by opportunity type">
                 <option value="all">All types</option>
               </select>
-              <select id="filter-added">
+              <select id="filter-added" aria-label="Filter by date added">
                 <option value="all">Any added date</option>
                 <option value="last-7-days">Last 7 days</option>
                 <option value="last-30-days">Last 30 days</option>
                 <option value="older">Older than 30 days</option>
               </select>
-              <select id="filter-link">
+              <select id="filter-link" aria-label="Filter by link availability">
                 <option value="all">All links</option>
                 <option value="has-link">Has link</option>
                 <option value="no-link">No link</option>

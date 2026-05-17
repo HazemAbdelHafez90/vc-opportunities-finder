@@ -839,6 +839,13 @@ function updateTableSortUi() {
         ? `Sorted by ${button.textContent.trim()} ${tableSortState.direction === "asc" ? "ascending" : "descending"}`
         : `Sort by ${button.textContent.trim()}`
     );
+    const th = button.closest("th");
+    if (th) {
+      th.setAttribute(
+        "aria-sort",
+        isActive ? (tableSortState.direction === "asc" ? "ascending" : "descending") : "none"
+      );
+    }
   });
 }
 
