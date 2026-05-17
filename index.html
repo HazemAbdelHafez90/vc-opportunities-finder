@@ -390,6 +390,7 @@
                 <thead>
                   <tr>
                     <th><button class="table-sort-button active" type="button" data-sort-column="fit">Fit</button></th>
+                    <th>Position</th>
                     <th><button class="table-sort-button" type="button" data-sort-column="opportunity">Opportunity</button></th>
                     <th><button class="table-sort-button" type="button" data-sort-column="source">Source</button></th>
                     <th><button class="table-sort-button" type="button" data-sort-column="added">Added</button></th>
@@ -400,7 +401,7 @@
                 </thead>
                 <tbody id="results-body">
                   <tr class="placeholder-row">
-                    <td colspan="7">No results yet.</td>
+                    <td colspan="8">No results yet.</td>
                   </tr>
                 </tbody>
               </table>
@@ -588,6 +589,31 @@
               <dd id="detail-source-meta">—</dd>
             </div>
           </dl>
+
+          <section id="detail-position-panel" class="position-evidence" aria-labelledby="detail-position-title">
+            <div class="position-evidence__header">
+              <div>
+                <p class="section-label">Fairpicture position</p>
+                <h3 id="detail-position-title">Country experience</h3>
+              </div>
+              <span id="detail-position-badge" class="position-badge position-badge--none">No evidence</span>
+            </div>
+            <p id="detail-position-summary" class="position-evidence__summary">No matching Fairpicture country or regional evidence was found.</p>
+            <dl class="position-evidence__list">
+              <div id="detail-position-exact" class="position-evidence__item">
+                <dt>Exact country</dt>
+                <dd>—</dd>
+              </div>
+              <div id="detail-position-nearby" class="position-evidence__item">
+                <dt>Nearby countries</dt>
+                <dd>—</dd>
+              </div>
+              <div id="detail-position-region" class="position-evidence__item">
+                <dt>Region</dt>
+                <dd>—</dd>
+              </div>
+            </dl>
+          </section>
 
           <div class="detail-modal__actions">
             <label class="detail-form-field">

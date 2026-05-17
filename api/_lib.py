@@ -15,6 +15,8 @@ import xml.etree.ElementTree as ET
 
 from bs4 import BeautifulSoup
 
+from api.fairpicture_position import get_fairpicture_position
+
 try:
     import certifi
 except ImportError:  # pragma: no cover
@@ -1453,6 +1455,7 @@ def serialize_opportunity_row(row: dict[str, Any]) -> dict[str, Any]:
         "fitScore": row.get("fit_score") or 0,
         "fitLabel": row.get("fit_label") or "Low fit",
         "fitReasons": row.get("fit_reasons") or [],
+        "fairpicturePosition": get_fairpicture_position(row.get("countries") or []),
         "actionStatus": action_status,
         "missedReason": missed_reason,
         "actionNotes": row.get("action_notes") or "",

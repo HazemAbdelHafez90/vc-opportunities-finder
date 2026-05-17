@@ -3,9 +3,9 @@
   "configurations": [
     {
       "name": "local-server",
-      "runtimeExecutable": "python3",
-      "runtimeArgs": ["-m", "http.server", "8000"],
-      "port": 8000
+      "runtimeExecutable": "vercel",
+      "runtimeArgs": ["dev", "--listen", "3000", "--yes"],
+      "port": 3000
     }
   ]
 }

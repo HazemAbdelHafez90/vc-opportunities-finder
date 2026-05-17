@@ -75,6 +75,11 @@ const detailContextLine = document.querySelector("#detail-context-line");
 const detailTitle = document.querySelector("#detail-title");
 const detailTitleLink = document.querySelector("#detail-title-link");
 const detailFit = document.querySelector("#detail-fit");
+const detailPositionBadge = document.querySelector("#detail-position-badge");
+const detailPositionSummary = document.querySelector("#detail-position-summary");
+const detailPositionExact = document.querySelector("#detail-position-exact dd");
+const detailPositionNearby = document.querySelector("#detail-position-nearby dd");
+const detailPositionRegion = document.querySelector("#detail-position-region dd");
 const detailSource = document.querySelector("#detail-source");
 const detailOrganization = document.querySelector("#detail-organization");
 const detailCountries = document.querySelector("#detail-countries");
@@ -123,6 +128,7 @@ const STORAGE_KEYS = {
   view: "fairpicture-opportunities-view",
 };
 const DEBUG_STORAGE_KEY = "fairpicture-opportunities-debug";
+const AUTH_BYPASS_STORAGE_KEY = "fairpicture-opportunities-auth-bypass";
 const ADMIN_AUTH_TOKEN_KEY = "fairpicture-admin-auth-token";
 const ADMIN_AUTH_USER_KEY = "fairpicture-admin-auth-user";
 const TAB_QUERY_MAP = new Map([
@@ -147,6 +153,7 @@ let authUserProfile = null;
 let supabaseClient = null;
 let authFlowMode = "sign-in";
 let authProvider = "supabase";
+let authBypassMode = false;
 let tableSortState = { column: "fit", direction: "desc" };
 let detailActionBusy = false;
 const bucketCounts = {
@@ -312,6 +319,11 @@ function initCustomDropdowns() {
 async function bootstrapAuth() {
   setBootState(true, "Restoring secure session and preparing the cached workspace.");
 
+  if (shouldEnableAuthBypass()) {
+    await applyBypassSession();
+    return;
+  }
+
   if (!window.supabase) {
     setAuthMessage("Supabase client failed to load.", true);
     setAuthBusy(true);
@@ -361,6 +373,59 @@ async function bootstrapAuth() {
     setBootState(false);
     authShell.hidden = false;
   }
+}
+
+function shouldEnableAuthBypass() {
+  if (!isLocalDevHost()) {
+    window.localStorage.removeItem(AUTH_BYPASS_STORAGE_KEY);
+    return false;
+  }
+
+  try {
+    const params = new URLSearchParams(window.location.search);
+    const requested = params.get("skipAuth");
+    if (requested === "1" || requested === "true") {
+      window.localStorage.setItem(AUTH_BYPASS_STORAGE_KEY, "1");
+      return true;
+    }
+  } catch (error) {
+    // Ignore malformed URL state.
+  }
+
+  return window.localStorage.getItem(AUTH_BYPASS_STORAGE_KEY) === "1";
+}
+
+function isLocalDevHost() {
+  const host = window.location.hostname;
+  return host === "localhost" || host === "127.0.0.1" || host === "::1";
+}
+
+function clearAuthBypass() {
+  authBypassMode = false;
+  window.localStorage.removeItem(AUTH_BYPASS_STORAGE_KEY);
+}
+
+async function applyBypassSession() {
+  authBypassMode = true;
+  authSession = { access_token: "dev-auth-bypass" };
+  authUserProfile = { email: "local-preview@fairpicture.dev" };
+  authProvider = "bypass";
+
+  setBootState(false);
+  authShell.hidden = true;
+  appShell.hidden = false;
+  authUser.hidden = false;
+  authUserEmail.textContent = authUserProfile.email;
+
+  allOpportunities = [];
+  resultsStatsSnapshot = [];
+  bucketCounts.results = 0;
+  bucketCounts.applied = 0;
+  bucketCounts.missed = 0;
+  applyTableState();
+  updateSyncMeta(null);
+  setStatus("Preview", "success");
+  setMessage("Local preview mode is enabled. Sign in to use live API data and actions.", "info");
 }
 
 async function fetchAuthConfig() {
@@ -460,6 +525,7 @@ function handleAuthEmailInput() {
 }
 
 async function applyAuthSession(session) {
+  authBypassMode = false;
   authSession = session || null;
   authUserProfile = session?.user || null;
   authProvider = "supabase";
@@ -490,6 +556,7 @@ async function applyAuthSession(session) {
 }
 
 async function applyAdminSession() {
+  authBypassMode = false;
   const adminToken = window.localStorage.getItem(ADMIN_AUTH_TOKEN_KEY) || "";
   const adminUser = parseStoredAdminUser(window.localStorage.getItem(ADMIN_AUTH_USER_KEY));
 
@@ -615,6 +682,15 @@ async function handlePasswordSetup() {
 }
 
 async function handleSignOut() {
+  if (authProvider === "bypass") {
+    clearAuthBypass();
+    authSession = null;
+    authUserProfile = null;
+    authProvider = "supabase";
+    await applyAuthSession(null);
+    return;
+  }
+
   clearAdminSession();
 
   if (authProvider === "admin") {
@@ -902,6 +978,10 @@ async function handleFetch() {
 }
 
 async function getAccessToken() {
+  if (authProvider === "bypass" || authBypassMode) {
+    throw new Error("Local preview mode is active. Sign in to access API data.");
+  }
+
   if (authSession?.access_token) {
     return authSession.access_token;
   }
@@ -1500,13 +1580,14 @@ function getStatusFilterValue(opportunity) {
 function renderTable(opportunities) {
   if (opportunities.length === 0) {
     resultsBody.innerHTML =
-      '<tr class="placeholder-row"><td colspan="7">No results to display.</td></tr>';
+      '<tr class="placeholder-row"><td colspan="8">No results to display.</td></tr>';
     return;
   }
 
   resultsBody.innerHTML = opportunities
     .map((opportunity) => {
       const fitTone = getFitTone(Number(opportunity.fitScore) || 0);
+      const positionDescriptor = getPositionDescriptor(opportunity);
       const safeTitle = escapeHtml(opportunity.title);
       const safeSecondary = escapeHtml(getOpportunitySecondaryLine(opportunity));
       const deadlineMeta = getDeadlineMeta(opportunity);
@@ -1520,6 +1601,9 @@ function renderTable(opportunities) {
         <tr class="clickable-row" data-opportunity-id="${safeId}">
           <td data-label="Fit">
             <span class="fit-badge fit-badge--${fitTone}">${escapeHtml(getFitBadgeLabel(opportunity))}</span>
+          </td>
+          <td data-label="Position">
+            ${renderPositionBadge(positionDescriptor)}
           </td>
           <td data-label="Opportunity">
             <p class="opportunity-title">${safeTitle}</p>
@@ -1554,6 +1638,7 @@ function renderCards(opportunities) {
     .map((opportunity) => {
       const expiringSoon = isExpiringSoon(opportunity);
       const fitTone = getFitTone(Number(opportunity.fitScore) || 0);
+      const positionDescriptor = getPositionDescriptor(opportunity);
       const safeTitle = escapeHtml(opportunity.title);
       const safeOrganization = escapeHtml(opportunity.organization || "N/A");
       const safeCountries = escapeHtml(
@@ -1575,7 +1660,10 @@ function renderCards(opportunities) {
             <div class="opportunity-card__source-tags">
               <span class="source-tag">${safeSource}</span>
             </div>
-            <span class="fit-badge fit-badge--${fitTone}">${escapeHtml(getFitBadgeLabel(opportunity))}</span>
+            <div class="opportunity-card__badges">
+              <span class="fit-badge fit-badge--${fitTone}">${escapeHtml(getFitBadgeLabel(opportunity))}</span>
+              ${renderPositionBadge(positionDescriptor)}
+            </div>
           </div>
 
           <div class="opportunity-card__body">
@@ -1837,6 +1925,51 @@ function getDetailFitDescriptor(opportunity) {
     return { tone: "medium", label: `${fitScore}% Med fit` };
   }
   return { tone: "low", label: `${fitScore}% Low fit` };
+}
+
+function getPositionDescriptor(opportunity) {
+  const position = opportunity?.fairpicturePosition || {};
+  const tone = ["strong", "good", "emerging", "none"].includes(position.tone)
+    ? position.tone
+    : "none";
+  return {
+    label: position.label || "No evidence",
+    tone,
+    summary: position.summary || "No matching Fairpicture country or regional evidence was found.",
+    evidence: position.evidence || {},
+  };
+}
+
+function renderPositionBadge(descriptor) {
+  return `<span class="position-badge position-badge--${escapeAttribute(descriptor.tone)}">${escapeHtml(descriptor.label)}</span>`;
+}
+
+function formatPositionRecords(records) {
+  if (!Array.isArray(records) || records.length === 0) {
+    return "No evidence";
+  }
+  return records
+    .map((record) => {
+      const country = record.country || "Country";
+      const total = Number(record.totalProjects) || 0;
+      const projects2026 = Number(record.projects2026) || 0;
+      const projects2025 = Number(record.projects2025) || 0;
+      const projects2024 = Number(record.projects2024) || 0;
+      const recent = projects2026 > 0
+        ? `${projects2026} in 2026`
+        : projects2025 > 0
+          ? `${projects2025} in 2025`
+          : `${projects2024} in 2024`;
+      return `${country}: ${recent}, ${total} total`;
+    })
+    .join("; ");
+}
+
+function formatPositionRegion(region) {
+  if (!region || !region.name || !region.totalProjects) {
+    return "No evidence";
+  }
+  return `${region.name}: ${region.totalProjects} projects since 2024`;
 }
 
 function getDetailStatusDescriptor(opportunity) {
@@ -2576,6 +2709,7 @@ function openDetailModal(opportunityId) {
   selectedOpportunityId = opportunityId;
   detailActionBusy = false;
   const fitDescriptor = getDetailFitDescriptor(opportunity);
+  const positionDescriptor = getPositionDescriptor(opportunity);
   const statusDescriptor = getDetailStatusDescriptor(opportunity);
   const deadlineMeta = getDetailDeadlineMeta(opportunity.deadline);
   const countryLabel = getOpportunityCountryLabel(opportunity);
@@ -2591,6 +2725,12 @@ function openDetailModal(opportunityId) {
   detailTitleLink.hidden = !opportunity.link;
   detailFit.className = `detail-badge detail-badge--fit detail-badge--${fitDescriptor.tone}`;
   detailFit.textContent = fitDescriptor.label;
+  detailPositionBadge.className = `position-badge position-badge--${positionDescriptor.tone}`;
+  detailPositionBadge.textContent = positionDescriptor.label;
+  detailPositionSummary.textContent = positionDescriptor.summary;
+  detailPositionExact.textContent = formatPositionRecords(positionDescriptor.evidence.exact);
+  detailPositionNearby.textContent = formatPositionRecords(positionDescriptor.evidence.neighbors);
+  detailPositionRegion.textContent = formatPositionRegion(positionDescriptor.evidence.region);
   detailStatus.className = `detail-badge detail-badge--status detail-badge--${statusDescriptor.tone}`;
   detailStatus.textContent = statusDescriptor.label;
   detailSource.textContent = getOpportunitySourceDetail(opportunity);
@@ -2772,6 +2912,7 @@ function matchesTenderSearch(opportunity, rawQuery) {
 function buildTenderSearchText(opportunity) {
   const sourceList = Array.isArray(opportunity.sourceList) ? opportunity.sourceList.join(" ") : "";
   const countryList = Array.isArray(opportunity.countryList) ? opportunity.countryList.join(" ") : "";
+  const position = opportunity.fairpicturePosition || {};
   const noticeIds = extractNoticeIds(opportunity.link).join(" ");
 
   return [
@@ -2782,6 +2923,8 @@ function buildTenderSearchText(opportunity) {
     opportunity.source,
     sourceList,
     countryList,
+    position.label,
+    position.summary,
     noticeIds,
   ]
     .filter(Boolean)
