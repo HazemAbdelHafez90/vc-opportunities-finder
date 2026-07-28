@@ -112,6 +112,22 @@ EXCLUDED_ROSTER_NAMES = {
     "the plant and people company (demo)",
 }
 
+# Ordinary words that happen to be a client's name or domain label. WASTE and Help are real
+# organisations, but matching them loosely would tag any tender mentioning waste disposal or
+# help desks. Such entries are matched only on their exact full name.
+GENERIC_NAME_WORDS = {
+    "waste",
+    "help",
+    "care",
+    "aid",
+    "world",
+    "global",
+    "plan",
+    "shared",
+    "research",
+    "foundation",
+}
+
 # Trailing legal-form tokens removed before comparing organisation names.
 LEGAL_SUFFIX_TOKENS = {
     "e", "v", "ev", "eg", "ag", "sa", "nv", "bv", "kg", "co", "aps", "asbl",
@@ -176,6 +192,13 @@ NETWORKS: dict[str, list[str]] = {
     "Red Cross / Red Crescent Movement": [
         "ifrc", "icrc", "red cross", "rotes kreuz", "croix rouge", "red crescent",
     ],
+}
+
+# Trailing qualifiers that mark a roster entry as a national office rather than a parent body.
+COUNTRY_OFFICE_SUFFIXES = {
+    "osterreich", "austria", "schweiz", "suisse", "svizzera", "switzerland",
+    "deutschland", "germany", "viet nam", "vietnam", "u s", "usa", "uk",
+    "france", "nederland", "netherlands", "canada", "australia", "india",
 }
 
 TIER_CLIENT = "client"
@@ -266,9 +289,20 @@ def match_roster_client(canonical: str, domain: str) -> dict[str, Any] | None:
         for candidate in ROSTER
         if candidate["matchable"] and contains_phrase(canonical, candidate["canonical"])
     ]
-    if not matches:
+    if matches:
+        return max(matches, key=lambda item: (len(item["canonical"]), item["projectCount"]))
+
+    # Tenders name the buyer by its everyday abbreviation ("MSF") or as a country office
+    # ("Welthungerhilfe Liberia"); neither contains the roster's full legal name.
+    alias_matches = [
+        (alias, candidate)
+        for alias, candidate in ROSTER_ALIASES
+        if contains_phrase(canonical, alias)
+    ]
+    if not alias_matches:
         return None
-    return max(matches, key=lambda item: (len(item["canonical"]), item["projectCount"]))
+    alias, candidate = max(alias_matches, key=lambda item: (len(item[0]), item[1]["projectCount"]))
+    return {**candidate, "matchedAlias": alias}
 
 
 def match_family(canonical: str) -> dict[str, Any] | None:
@@ -280,6 +314,19 @@ def match_family(canonical: str) -> dict[str, Any] | None:
         clients = FAMILY_CLIENTS.get(family_name) or []
         if clients:
             return {"name": family_name, "clients": clients}
+
+    # A different office of a body we know only through one national office. Warm, but not
+    # the same as having worked with this buyer.
+    chapter_matches = [
+        (alias, candidate)
+        for alias, candidate in ROSTER_CHAPTER_ALIASES
+        if contains_phrase(canonical, alias)
+    ]
+    if chapter_matches:
+        alias, candidate = max(
+            chapter_matches, key=lambda item: (len(item[0]), item[1]["projectCount"])
+        )
+        return {"name": candidate["name"].split(" ")[0] or alias, "clients": [candidate]}
     return None
 
 
@@ -395,7 +442,7 @@ def build_roster_record(name: str, website: str, project_count: int) -> dict[str
         "canonical": canonical,
         "domain": extract_domain_label(website),
         # Short or highly generic names are matched exactly to avoid false positives.
-        "matchable": len(canonical) >= 5,
+        "matchable": len(canonical) >= 5 and canonical not in GENERIC_NAME_WORDS,
     }
 
 
@@ -418,6 +465,41 @@ for record in ROSTER:
     existing = ROSTER_BY_DOMAIN.get(record["domain"])
     if not existing or record["projectCount"] > existing["projectCount"]:
         ROSTER_BY_DOMAIN[record["domain"]] = record
+
+
+def build_alias(domain_label: str) -> str:
+    """Turn a domain label into a matchable phrase: `brot-fuer-die-welt` -> `brot fuer die welt`."""
+    alias = normalize_lookup_key(domain_label.replace("-", " "))
+    if len(alias) < 3 or alias in GENERIC_NAME_WORDS:
+        return ""
+    return alias
+
+
+def has_country_suffix(canonical: str) -> bool:
+    """True for roster entries that name a national office, e.g. `ILO Viet Nam`.
+
+    The direction matters. A headquarters relationship reasonably covers its country
+    offices, so `Deutsche Welthungerhilfe` may expand to `Welthungerhilfe Liberia`. The
+    reverse does not: working with ILO Viet Nam says nothing about ILO Colombo, so such an
+    entry must not expand its alias to every other office of the same body.
+    """
+    return any(canonical.endswith(" " + suffix) for suffix in COUNTRY_OFFICE_SUFFIXES)
+
+
+# (alias, roster record) pairs, longest alias first so the most specific match wins.
+ROSTER_ALIASES: list[tuple[str, dict[str, Any]]] = []
+ROSTER_CHAPTER_ALIASES: list[tuple[str, dict[str, Any]]] = []
+for record in ROSTER:
+    alias = build_alias(record["domain"])
+    # An alias that merely repeats the canonical name adds nothing over substring matching.
+    if not alias or alias == record["canonical"]:
+        continue
+    if has_country_suffix(record["canonical"]):
+        ROSTER_CHAPTER_ALIASES.append((alias, record))
+    else:
+        ROSTER_ALIASES.append((alias, record))
+ROSTER_ALIASES.sort(key=lambda item: len(item[0]), reverse=True)
+ROSTER_CHAPTER_ALIASES.sort(key=lambda item: len(item[0]), reverse=True)
 
 
 def collect_group_clients(groups: dict[str, list[str]]) -> dict[str, list[dict[str, Any]]]:

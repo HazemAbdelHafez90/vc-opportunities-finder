@@ -80,6 +80,41 @@ class ClientWarmthTests(unittest.TestCase):
             with self.subTest(organization=organization):
                 self.assertEqual(get_client_warmth(organization, "")["tone"], "new")
 
+    def test_abbreviation_alias_matches_client(self):
+        """Tenders name the buyer `MSF`; the roster holds `Médecins Sans Frontières`."""
+        for organization in ("MSF", "MSF Switzerland"):
+            with self.subTest(organization=organization):
+                result = get_client_warmth(organization, "")
+                self.assertEqual(result["tone"], "client")
+                self.assertEqual(result["evidence"]["client"]["name"], "Médecins Sans Frontières")
+
+    def test_headquarters_client_covers_its_country_office(self):
+        """`Deutsche Welthungerhilfe` is the roster entry; the tender is from Liberia."""
+        result = get_client_warmth("Welthungerhilfe Liberia", "")
+
+        self.assertEqual(result["tone"], "client")
+        self.assertEqual(result["evidence"]["client"]["name"], "Deutsche Welthungerhilfe")
+
+    def test_country_office_client_does_not_expand_to_the_whole_body(self):
+        """Working with ILO Viet Nam says nothing about ILO's other offices."""
+        result = get_client_warmth("ILO", "")
+
+        self.assertNotEqual(result["tone"], "client")
+        self.assertEqual(result["tone"], "family")
+        self.assertEqual(result["evidence"]["family"]["clients"][0]["name"], "ILO Viet Nam")
+
+    def test_generic_alias_words_never_match(self):
+        """WASTE is a roster org, but `waste` must not match ordinary tender wording."""
+        for organization in ("Waste Management Authority", "Global Help Foundation", "World Care Group"):
+            with self.subTest(organization=organization):
+                self.assertEqual(get_client_warmth(organization, "")["tone"], "new")
+
+    def test_sibling_national_society_stays_a_sister_org(self):
+        result = get_client_warmth("Croix-Rouge luxembourgeoise", "")
+
+        self.assertEqual(result["tone"], "family")
+        self.assertEqual(result["evidence"]["family"]["name"], "Red Cross / Red Crescent")
+
     def test_canonical_org_name_strips_legal_suffixes(self):
         self.assertEqual(canonical_org_name("Naturland e.V."), "naturland")
         self.assertEqual(canonical_org_name("Aktion gegen den Hunger gGmbH"), "aktion gegen den hunger")
