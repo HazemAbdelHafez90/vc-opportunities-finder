@@ -80,6 +80,10 @@ const detailPositionSummary = document.querySelector("#detail-position-summary")
 const detailPositionExact = document.querySelector("#detail-position-exact dd");
 const detailPositionNearby = document.querySelector("#detail-position-nearby dd");
 const detailPositionRegion = document.querySelector("#detail-position-region dd");
+const detailWarmthBadge = document.querySelector("#detail-warmth-badge");
+const detailWarmthSummary = document.querySelector("#detail-warmth-summary");
+const detailWarmthClient = document.querySelector("#detail-warmth-client dd");
+const detailWarmthGroup = document.querySelector("#detail-warmth-group dd");
 const detailSource = document.querySelector("#detail-source");
 const detailOrganization = document.querySelector("#detail-organization");
 const detailCountries = document.querySelector("#detail-countries");
@@ -105,6 +109,7 @@ const paginationNextButton = document.querySelector("#pagination-next");
 const tenderSearchInput = document.querySelector("#tender-search");
 const tenderSearchClearButton = document.querySelector("#tender-search-clear");
 const fitFilter = document.querySelector("#filter-fit");
+const warmthFilter = document.querySelector("#filter-warmth");
 const opportunityFilter = document.querySelector("#filter-opportunity");
 const sourceFilter = document.querySelector("#filter-source");
 const addedFilter = document.querySelector("#filter-added");
@@ -112,6 +117,7 @@ const deadlineFilter = document.querySelector("#filter-deadline");
 const statusFilter = document.querySelector("#filter-status");
 const linkFilter = document.querySelector("#filter-link");
 const fitFilterChip = document.querySelector("#fit-filter-chip");
+const warmthFilterChip = document.querySelector("#warmth-filter-chip");
 const deadlineFilterChip = document.querySelector("#deadline-filter-chip");
 const sourceFilterChip = document.querySelector("#source-filter-chip");
 const statusFilterChip = document.querySelector("#status-filter-chip");
@@ -211,6 +217,7 @@ if (themeToggleButton) {
 }
 [
   fitFilter,
+  warmthFilter,
   opportunityFilter,
   sourceFilter,
   addedFilter,
@@ -793,6 +800,7 @@ function getColumnFilters() {
   return {
     search: tenderSearchInput.value.trim(),
     fit: fitFilter.value,
+    warmth: warmthFilter.value,
     opportunity: opportunityFilter.value,
     source: sourceFilter.value,
     added: addedFilter.value,
@@ -825,7 +833,7 @@ function updateTableSort(column) {
 }
 
 function getDefaultSortDirection(column) {
-  return ["fit", "added", "deadline"].includes(column) ? "desc" : "asc";
+  return ["fit", "warmth", "added", "deadline"].includes(column) ? "desc" : "asc";
 }
 
 function updateTableSortUi() {
@@ -1373,6 +1381,7 @@ function updateTabCounts() {
 
 function updateFilterChipUi(filters) {
   updateFilterChipLabel(fitFilterChip, "Fit", fitFilter, filters.fit);
+  updateFilterChipLabel(warmthFilterChip, "Client", warmthFilter, filters.warmth);
   updateFilterChipLabel(deadlineFilterChip, "Deadline", deadlineFilter, filters.deadline);
   updateFilterChipLabel(sourceFilterChip, "Source", sourceFilter, filters.source);
   updateFilterChipLabel(statusFilterChip, "Status", statusFilter, filters.status);
@@ -1408,6 +1417,10 @@ function filterOpportunities(opportunities, filters) {
     }
 
     if (filters.fit !== "all" && getFitFilterValue(opportunity) !== filters.fit) {
+      return false;
+    }
+
+    if (filters.warmth !== "all" && !matchesWarmthFilter(opportunity, filters.warmth)) {
       return false;
     }
 
@@ -1532,6 +1545,10 @@ function getSortComparison(left, right, column) {
     return (Number(left.fitScore) || 0) - (Number(right.fitScore) || 0);
   }
 
+  if (column === "warmth") {
+    return getWarmthDescriptor(left).score - getWarmthDescriptor(right).score;
+  }
+
   if (column === "opportunity") {
     return safeCompare(left.title, right.title);
   }
@@ -1587,7 +1604,7 @@ function getStatusFilterValue(opportunity) {
 function renderTable(opportunities) {
   if (opportunities.length === 0) {
     resultsBody.innerHTML =
-      '<tr class="placeholder-row"><td colspan="8">No results to display.</td></tr>';
+      '<tr class="placeholder-row"><td colspan="9">No results to display.</td></tr>';
     return;
   }
 
@@ -1595,6 +1612,7 @@ function renderTable(opportunities) {
     .map((opportunity) => {
       const fitTone = getFitTone(Number(opportunity.fitScore) || 0);
       const positionDescriptor = getPositionDescriptor(opportunity);
+      const warmthDescriptor = getWarmthDescriptor(opportunity);
       const safeTitle = escapeHtml(opportunity.title);
       const safeSecondary = escapeHtml(getOpportunitySecondaryLine(opportunity));
       const deadlineMeta = getDeadlineMeta(opportunity);
@@ -1608,6 +1626,9 @@ function renderTable(opportunities) {
         <tr class="clickable-row" data-opportunity-id="${safeId}">
           <td data-label="Fit">
             <span class="fit-badge fit-badge--${fitTone}">${escapeHtml(getFitBadgeLabel(opportunity))}</span>
+          </td>
+          <td data-label="Client">
+            ${renderWarmthBadge(warmthDescriptor)}
           </td>
           <td data-label="Position">
             ${renderPositionBadge(positionDescriptor)}
@@ -1646,6 +1667,7 @@ function renderCards(opportunities) {
       const expiringSoon = isExpiringSoon(opportunity);
       const fitTone = getFitTone(Number(opportunity.fitScore) || 0);
       const positionDescriptor = getPositionDescriptor(opportunity);
+      const warmthDescriptor = getWarmthDescriptor(opportunity);
       const safeTitle = escapeHtml(opportunity.title);
       const safeOrganization = escapeHtml(opportunity.organization || "N/A");
       const safeCountries = escapeHtml(
@@ -1669,6 +1691,7 @@ function renderCards(opportunities) {
             </div>
             <div class="opportunity-card__badges">
               <span class="fit-badge fit-badge--${fitTone}">${escapeHtml(getFitBadgeLabel(opportunity))}</span>
+              ${warmthDescriptor.tone === "new" ? "" : renderWarmthBadge(warmthDescriptor)}
               ${renderPositionBadge(positionDescriptor)}
             </div>
           </div>
@@ -1949,6 +1972,62 @@ function getPositionDescriptor(opportunity) {
 
 function renderPositionBadge(descriptor) {
   return `<span class="position-badge position-badge--${escapeAttribute(descriptor.tone)}">${escapeHtml(descriptor.label)}</span>`;
+}
+
+function getWarmthDescriptor(opportunity) {
+  const warmth = opportunity?.clientWarmth || {};
+  const tone = ["client", "family", "network", "new"].includes(warmth.tone) ? warmth.tone : "new";
+  return {
+    label: warmth.label || "New contact",
+    tone,
+    score: Number(warmth.score) || 0,
+    summary: warmth.summary || "No existing Fairpicture relationship was found for this organisation.",
+    evidence: warmth.evidence || {},
+  };
+}
+
+function renderWarmthBadge(descriptor) {
+  // Most tenders come from organisations Fairpicture has never worked with. Rendering a badge
+  // on every one of them would bury the handful that are actually warm.
+  if (descriptor.tone === "new") {
+    return '<span class="warmth-empty" title="No existing Fairpicture relationship">—</span>';
+  }
+  const suffix = descriptor.tone === "client" ? getWarmthClientSuffix(descriptor) : "";
+  return `<span class="warmth-badge warmth-badge--${escapeAttribute(descriptor.tone)}" title="${escapeAttribute(descriptor.summary)}">${escapeHtml(descriptor.label + suffix)}</span>`;
+}
+
+function getWarmthClientSuffix(descriptor) {
+  const count = Number(descriptor.evidence?.client?.projectCount) || 0;
+  return count > 0 ? ` · ${count}` : "";
+}
+
+function getWarmthFilterValue(opportunity) {
+  return getWarmthDescriptor(opportunity).tone;
+}
+
+function matchesWarmthFilter(opportunity, mode) {
+  const tone = getWarmthFilterValue(opportunity);
+  if (mode === "warm") {
+    return tone !== "new";
+  }
+  return tone === mode;
+}
+
+function formatWarmthClient(client) {
+  if (!client) {
+    return "No direct client match";
+  }
+  const count = Number(client.projectCount) || 0;
+  return `${client.name} — ${count} project${count === 1 ? "" : "s"}`;
+}
+
+function formatWarmthGroup(evidence) {
+  const group = evidence?.family || evidence?.network;
+  if (!group) {
+    return "No related organisation or network";
+  }
+  const names = (group.clients || []).map((client) => client.name).join(", ");
+  return names ? `${group.name} — ${names}` : group.name;
 }
 
 function formatPositionRecords(records) {
@@ -2717,6 +2796,7 @@ function openDetailModal(opportunityId) {
   detailActionBusy = false;
   const fitDescriptor = getDetailFitDescriptor(opportunity);
   const positionDescriptor = getPositionDescriptor(opportunity);
+  const warmthDescriptor = getWarmthDescriptor(opportunity);
   const statusDescriptor = getDetailStatusDescriptor(opportunity);
   const deadlineMeta = getDetailDeadlineMeta(opportunity.deadline);
   const countryLabel = getOpportunityCountryLabel(opportunity);
@@ -2738,6 +2818,11 @@ function openDetailModal(opportunityId) {
   detailPositionExact.textContent = formatPositionRecords(positionDescriptor.evidence.exact);
   detailPositionNearby.textContent = formatPositionRecords(positionDescriptor.evidence.neighbors);
   detailPositionRegion.textContent = formatPositionRegion(positionDescriptor.evidence.region);
+  detailWarmthBadge.className = `warmth-badge warmth-badge--${warmthDescriptor.tone}`;
+  detailWarmthBadge.textContent = warmthDescriptor.label;
+  detailWarmthSummary.textContent = warmthDescriptor.summary;
+  detailWarmthClient.textContent = formatWarmthClient(warmthDescriptor.evidence.client);
+  detailWarmthGroup.textContent = formatWarmthGroup(warmthDescriptor.evidence);
   detailStatus.className = `detail-badge detail-badge--status detail-badge--${statusDescriptor.tone}`;
   detailStatus.textContent = statusDescriptor.label;
   detailSource.textContent = getOpportunitySourceDetail(opportunity);
@@ -2920,6 +3005,7 @@ function buildTenderSearchText(opportunity) {
   const sourceList = Array.isArray(opportunity.sourceList) ? opportunity.sourceList.join(" ") : "";
   const countryList = Array.isArray(opportunity.countryList) ? opportunity.countryList.join(" ") : "";
   const position = opportunity.fairpicturePosition || {};
+  const warmth = opportunity.clientWarmth || {};
   const noticeIds = extractNoticeIds(opportunity.link).join(" ");
 
   return [
@@ -2932,6 +3018,8 @@ function buildTenderSearchText(opportunity) {
     countryList,
     position.label,
     position.summary,
+    warmth.label,
+    warmth.summary,
     noticeIds,
   ]
     .filter(Boolean)

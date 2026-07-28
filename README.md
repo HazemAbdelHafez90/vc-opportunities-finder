@@ -39,9 +39,44 @@ API routes:
   returns the public Supabase auth config needed by the browser sign-in flow
 - `api/_lib.py`
   shared source fetchers, fit scoring, normalization, and Supabase REST helpers
+- `api/fairpicture_position.py`
+  scores country experience ("can we deliver there")
+- `api/client_warmth.py`
+  scores the issuing organisation ("do they already know us")
 
 Database:
 - `supabase/schema.sql`
+
+## Client Warmth
+
+Every opportunity is scored against Fairpicture's client roster so warm leads stay at the top
+of the desk instead of being lost in the volume of cold tenders. The `Client` column sorts and
+filters on four tiers:
+
+| Tier | Badge | Meaning |
+| --- | --- | --- |
+| Client | `Client · N` | The issuing organisation is an existing client, with N projects on record |
+| Sister org | `Sister org` | A national chapter or sibling of a client (Caritas Österreich → Caritas Germany) |
+| Network | `Network` | A co-member of an umbrella where Fairpicture already works (DEC, ACT Alliance) |
+| New | `—` | No known relationship |
+
+Matching runs on the organisation name (accents, legal suffixes such as `e.V.` and `gGmbH`, and
+longer legal names are normalized away) and on the website domain label, so a roster entry of
+`naturland.org` still matches a tender published on `naturland.de`.
+
+Warmth is computed at serialization time in `serialize_opportunity_row`, so it needs no schema
+migration and no re-sync — changing the roster changes the scores on the next page load.
+
+### Refreshing the roster
+
+`RAW_CLIENT_ROSTER` in [api/client_warmth.py](/Users/hazem/Fairpicture/mvps/vc-opportunities-finder/api/client_warmth.py)
+is a static export of `organisation_name, website, project_count`. To refresh it, re-run the
+client export query and replace the list. Test and demo rows are dropped explicitly through
+`EXCLUDED_ROSTER_NAMES` — extend that set rather than deleting rows, so it stays obvious what
+was filtered and why.
+
+Family and umbrella membership live in `ORG_FAMILIES` and `NETWORKS` and are maintained by hand.
+A tier only fires when Fairpicture actually has a client in that family or network.
 
 ## Manual Supabase Setup
 

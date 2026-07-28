@@ -19,6 +19,8 @@
   --color-danger: #f85149;
   --color-purple: #a78bfa;
   --color-amber-hi: #f0b35f;
+  /* Lifted accent so the client badge keeps AA contrast on the dark surface */
+  --color-accent-hi: #f0785c;
 }
 
 * {
@@ -1055,6 +1057,7 @@ tbody td {
 
 .fit-badge,
 .position-badge,
+.warmth-badge,
 .status-badge {
   display: inline-flex;
   align-items: center;
@@ -1111,6 +1114,40 @@ tbody td {
 .position-badge--none {
   background: rgba(255, 255, 255, 0.05);
   color: var(--text-faint);
+}
+
+.warmth-badge {
+  max-width: 136px;
+  white-space: nowrap;
+}
+
+/* An existing client is the strongest buy signal in the table, so it earns the accent. */
+.warmth-badge--client {
+  background: var(--accent-lo);
+  color: var(--color-accent-hi);
+  border-color: rgba(200, 67, 42, 0.4);
+}
+
+.warmth-badge--family {
+  background: rgba(63, 185, 80, 0.14);
+  color: var(--color-green);
+  border-color: rgba(63, 185, 80, 0.26);
+}
+
+.warmth-badge--network {
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--text-dim);
+}
+
+.warmth-badge--new {
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--text-faint);
+}
+
+/* Most rows have no relationship; a dash keeps the warm ones scannable. */
+.warmth-empty {
+  color: var(--text-faint);
+  font-size: 12px;
 }
 
 .opportunity-title {
@@ -2700,6 +2737,7 @@ html[data-theme="light"] {
   --color-amber-hi: #b45309;
   --color-danger: #dc2626;
   --color-purple: #7c3aed;
+  --color-accent-hi: #a5361f;
   --card-hi: rgba(0, 0, 0, 0.055);
   color-scheme: light;
 }
@@ -2965,6 +3003,30 @@ html[data-theme="light"] .position-badge--emerging {
 }
 
 html[data-theme="light"] .position-badge--none {
+  background: #f8fafc;
+  color: #94a3b8;
+  border-color: #e2e8f0;
+}
+
+html[data-theme="light"] .warmth-badge--client {
+  background: #fef2f0;
+  color: #a5361f;
+  border-color: #f6c9bf;
+}
+
+html[data-theme="light"] .warmth-badge--family {
+  background: #f0fdf4;
+  color: #15803d;
+  border-color: #bbf7d0;
+}
+
+html[data-theme="light"] .warmth-badge--network {
+  background: #f8fafc;
+  color: #475569;
+  border-color: #e2e8f0;
+}
+
+html[data-theme="light"] .warmth-badge--new {
   background: #f8fafc;
   color: #94a3b8;
   border-color: #e2e8f0;

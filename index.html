@@ -305,6 +305,20 @@
                 </div>
               </details>
 
+              <details class="filter-chip" id="warmth-filter-details">
+                <summary id="warmth-filter-chip">Client <svg viewBox="0 0 10 10"><path d="M2 3.5 5 6.5 8 3.5"></path></svg></summary>
+                <div class="filter-chip__panel">
+                  <select id="filter-warmth" aria-label="Filter by client relationship">
+                    <option value="all">All relationships</option>
+                    <option value="warm">Any relationship</option>
+                    <option value="client">Existing clients</option>
+                    <option value="family">Sister orgs</option>
+                    <option value="network">Same network</option>
+                    <option value="new">New contacts</option>
+                  </select>
+                </div>
+              </details>
+
               <details class="filter-chip" id="deadline-filter-details">
                 <summary id="deadline-filter-chip">Deadline <svg viewBox="0 0 10 10"><path d="M2 3.5 5 6.5 8 3.5"></path></svg></summary>
                 <div class="filter-chip__panel">
@@ -391,6 +405,7 @@
                 <thead>
                   <tr>
                     <th><button class="table-sort-button active" type="button" data-sort-column="fit">Fit</button></th>
+                    <th><button class="table-sort-button" type="button" data-sort-column="warmth">Client</button></th>
                     <th>Position</th>
                     <th><button class="table-sort-button" type="button" data-sort-column="opportunity">Opportunity</button></th>
                     <th><button class="table-sort-button" type="button" data-sort-column="source">Source</button></th>
@@ -402,7 +417,7 @@
                 </thead>
                 <tbody id="results-body">
                   <tr class="placeholder-row">
-                    <td colspan="8">No results yet.</td>
+                    <td colspan="9">No results yet.</td>
                   </tr>
                 </tbody>
               </table>
@@ -590,6 +605,27 @@
               <dd id="detail-source-meta">—</dd>
             </div>
           </dl>
+
+          <section id="detail-warmth-panel" class="position-evidence" aria-labelledby="detail-warmth-title">
+            <div class="position-evidence__header">
+              <div>
+                <p class="section-label">Client relationship</p>
+                <h3 id="detail-warmth-title">Who is issuing this</h3>
+              </div>
+              <span id="detail-warmth-badge" class="warmth-badge warmth-badge--new">New contact</span>
+            </div>
+            <p id="detail-warmth-summary" class="position-evidence__summary">No existing Fairpicture relationship was found for this organisation.</p>
+            <dl class="position-evidence__list">
+              <div id="detail-warmth-client" class="position-evidence__item">
+                <dt>Direct client</dt>
+                <dd>—</dd>
+              </div>
+              <div id="detail-warmth-group" class="position-evidence__item">
+                <dt>Family / network</dt>
+                <dd>—</dd>
+              </div>
+            </dl>
+          </section>
 
           <section id="detail-position-panel" class="position-evidence" aria-labelledby="detail-position-title">
             <div class="position-evidence__header">
