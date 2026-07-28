@@ -15,6 +15,7 @@ import xml.etree.ElementTree as ET
 
 from bs4 import BeautifulSoup
 
+from api.client_warmth import get_client_warmth
 from api.fairpicture_position import get_fairpicture_position
 
 try:
@@ -1456,6 +1457,7 @@ def serialize_opportunity_row(row: dict[str, Any]) -> dict[str, Any]:
         "fitLabel": row.get("fit_label") or "Low fit",
         "fitReasons": row.get("fit_reasons") or [],
         "fairpicturePosition": get_fairpicture_position(row.get("countries") or []),
+        "clientWarmth": get_client_warmth(row.get("organization"), row.get("link")),
         "actionStatus": action_status,
         "missedReason": missed_reason,
         "actionNotes": row.get("action_notes") or "",
