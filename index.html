@@ -8,18 +8,21 @@
       name="description"
       content="Find humanitarian media and storytelling procurement opportunities ranked for Fairpicture."
     />
-    <link rel="preconnect" href="https://fonts.googleapis.com" />
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
-      href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600&family=DM+Serif+Display:ital@0;1&display=swap"
-      rel="stylesheet"
+      rel="preload"
+      href="./fonts/GT-Cinetype-Regular.woff2"
+      as="font"
+      type="font/woff2"
+      crossorigin
+    />
+    <link
+      rel="preload"
+      href="./fonts/GT-Cinetype-Bold.woff2"
+      as="font"
+      type="font/woff2"
+      crossorigin
     />
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-    <style>
-      html {
-        background: #0e1117;
-      }
-    </style>
     <link rel="stylesheet" href="./styles.css" />
     <script>
       (function() {
@@ -41,7 +44,7 @@
   <body>
     <section id="boot-shell" class="boot-shell" aria-live="polite">
       <div class="boot-shell__panel">
-        <p class="section-label">Secure Workspace</p>
+        <p class="section-label">Secure workspace</p>
         <h1>Restoring access</h1>
         <p id="boot-message" class="boot-shell__message">
           Checking the last signed-in session and loading the cached tender desk.
@@ -66,9 +69,9 @@
 
         <div class="auth-hero">
           <p class="auth-kicker auth-stage auth-stage--1"><span></span>Tender Radar</p>
-          <h1 class="auth-stage auth-stage--2">Find every <em>visual</em> opportunity, fast.</h1>
+          <h1 class="auth-stage auth-stage--2">One desk for every <em>visual storytelling</em> tender.</h1>
           <p class="auth-shell__summary auth-stage auth-stage--3">
-            A live procurement desk scanning ReliefWeb, UNDP, UNGM, ICIMOD and more — ranked by fit for documentary, photography, and field production work.
+            A live procurement desk scanning ReliefWeb, UNDP, UNGM, ICIMOD and more, ranked by fit for documentary, photography and field production work.
           </p>
           <div class="source-pills auth-stage auth-stage--4" aria-label="Source coverage">
             <span class="source-pills__item source-pills__item--live">ReliefWeb</span>
@@ -82,11 +85,11 @@
           <div class="auth-stats auth-stage auth-stage--5">
             <div>
               <strong>5</strong>
-              <span>Live Sources</span>
+              <span>Live sources</span>
             </div>
             <div>
-              <strong>∞</strong>
-              <span>Auto-Scan</span>
+              <strong>Daily</strong>
+              <span>Automatic scan</span>
             </div>
             <div>
               <strong>Fit</strong>
@@ -95,12 +98,12 @@
           </div>
         </div>
 
-        <p class="auth-shell__footnote">Internal use only · Fairpicture Operations</p>
+        <p class="auth-shell__footnote">Internal use only · Fairpicture operations</p>
       </div>
 
       <div class="auth-shell__panel">
         <div class="auth-form__intro">
-          <p class="auth-access-badge">Private Access</p>
+          <p class="auth-access-badge">Private access</p>
           <h2 id="auth-title">Welcome back</h2>
           <p id="auth-summary" class="auth-form__subline">Sign in with your invited team account.</p>
         </div>
@@ -118,7 +121,7 @@
             <input id="auth-password-confirm" type="password" autocomplete="new-password" />
           </label>
           <button id="auth-submit" class="primary-button auth-form__submit" type="submit">
-            Sign in to Radar
+            Sign in
           </button>
         </form>
         <p id="auth-message" class="auth-shell__message">
@@ -128,98 +131,88 @@
     </section>
 
     <div id="app-shell" class="page-shell" hidden>
-      <main class="dashboard">
-        <section class="control-panel">
-          <div class="workspace-bar">
-            <div class="workspace-bar__identity">
-              <p class="section-label">Tender Radar</p>
-              <div class="workspace-bar__title-row">
-                <h2 class="headline">Fairpicture procurement desk</h2>
-                <span class="workspace-badge">Internal</span>
-              </div>
-              <p class="panel-summary">
-                Procurement and editorial opportunities ranked for documentary, photography, and field production work.
-              </p>
-              <div class="workspace-meta">
-                <span id="last-updated">Last synced: never</span>
-                <span class="status-pill" id="status-pill">
-                  <span class="status-pill__spinner" aria-hidden="true"></span>
-                  <span class="status-pill__label">Idle</span>
-                </span>
-              </div>
-              <strong id="result-count" hidden>0 items</strong>
-            </div>
-            <div class="workspace-bar__actions">
-              <!-- legacy theme buttons kept for JS compat, visually replaced by toggle -->
-              <div class="display-group display-group--header" role="group" aria-label="Theme mode" hidden>
-                <button id="theme-light" class="display-toggle active" type="button">Light</button>
-                <button id="theme-dark" class="display-toggle" type="button">Dark</button>
-              </div>
-
-              <!-- ✨ New theme toggle -->
-              <button id="theme-toggle" class="theme-toggle" type="button" aria-label="Toggle light/dark mode">
-                <span class="theme-toggle__thumb" aria-hidden="true"></span>
-                <span class="theme-toggle__icons" aria-hidden="true">
-                  <!-- Sun (left = light) -->
-                  <svg class="theme-toggle__icon theme-toggle__icon--sun" viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg">
-                    <path fill-rule="evenodd" d="M10 2a1 1 0 011 1v1a1 1 0 11-2 0V3a1 1 0 011-1zm4 8a4 4 0 11-8 0 4 4 0 018 0zm-.464 4.95l.707.707a1 1 0 001.414-1.414l-.707-.707a1 1 0 00-1.414 1.414zm2.12-10.607a1 1 0 010 1.414l-.706.707a1 1 0 11-1.414-1.414l.707-.707a1 1 0 011.414 0zM17 11a1 1 0 100-2h-1a1 1 0 100 2h1zm-7 4a1 1 0 011 1v1a1 1 0 11-2 0v-1a1 1 0 011-1zM5.05 6.464A1 1 0 106.465 5.05l-.708-.707a1 1 0 00-1.414 1.414l.707.707zm1.414 8.486l-.707.707a1 1 0 01-1.414-1.414l.707-.707a1 1 0 011.414 1.414zM4 11a1 1 0 100-2H3a1 1 0 000 2h1z" clip-rule="evenodd"/>
-                  </svg>
-                  <!-- Moon (right = dark) -->
-                  <svg class="theme-toggle__icon theme-toggle__icon--moon" viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg">
-                    <path d="M17.293 13.293A8 8 0 016.707 2.707a8.001 8.001 0 1010.586 10.586z"/>
-                  </svg>
-                </span>
-              </button>
-
-              <button id="sources-button" class="ghost-button" type="button">Sources</button>
-              <button id="open-settings" class="ghost-button" type="button">Settings</button>
-              <div id="auth-user" class="auth-user" hidden>
-                <span class="auth-user__label">Signed in as</span>
-                <span id="auth-user-email" class="auth-user__email"></span>
-                <button id="sign-out-button" class="ghost-button" type="button" aria-label="Sign out">
-                  Sign out
-                </button>
-              </div>
-              <button id="fetch-button" class="primary-button" type="button">
-                <span class="button-spinner" aria-hidden="true"></span>
-                <span class="button-label">Refresh Results</span>
-              </button>
-            </div>
+      <header class="app-bar">
+        <div class="app-bar__identity">
+          <span class="app-bar__mark" aria-hidden="true">
+            <svg viewBox="0 0 32 32">
+              <circle cx="16" cy="16" r="7.2"></circle>
+              <path d="M16 2.5v4.4M16 25.1v4.4M2.5 16h4.4M25.1 16h4.4"></path>
+            </svg>
+          </span>
+          <div>
+            <h1 class="app-bar__title">Tender Radar</h1>
+            <p class="app-bar__meta">
+              <span id="last-updated">Last synced: never</span>
+              <span class="status-pill" id="status-pill">
+                <span class="status-pill__spinner" aria-hidden="true"></span>
+                <span class="status-pill__label">Idle</span>
+              </span>
+            </p>
+          </div>
+          <span class="workspace-badge">Internal</span>
+          <strong id="result-count" hidden>0 items</strong>
+        </div>
+        <div class="app-bar__actions">
+          <!-- Legacy theme buttons kept for JS compatibility, replaced visually by the toggle -->
+          <div class="display-group display-group--header" role="group" aria-label="Theme mode" hidden>
+            <button id="theme-light" class="display-toggle active" type="button">Light</button>
+            <button id="theme-dark" class="display-toggle" type="button">Dark</button>
           </div>
 
-          <button id="settings-summary-button" class="settings-strip" type="button">
-            <div class="settings-strip__copy">
-              <p class="section-label">Operations settings</p>
-              <p id="notification-settings-status" class="notification-settings__status">
-                Loading notification settings.
-              </p>
-            </div>
-            <span class="settings-strip__edit" aria-hidden="true">Edit</span>
+          <button id="theme-toggle" class="theme-toggle" type="button" aria-label="Switch between light and dark mode">
+            <span class="theme-toggle__thumb" aria-hidden="true"></span>
+            <span class="theme-toggle__icons" aria-hidden="true">
+              <svg class="theme-toggle__icon theme-toggle__icon--sun" viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg">
+                    <path fill-rule="evenodd" d="M10 2a1 1 0 011 1v1a1 1 0 11-2 0V3a1 1 0 011-1zm4 8a4 4 0 11-8 0 4 4 0 018 0zm-.464 4.95l.707.707a1 1 0 001.414-1.414l-.707-.707a1 1 0 00-1.414 1.414zm2.12-10.607a1 1 0 010 1.414l-.706.707a1 1 0 11-1.414-1.414l.707-.707a1 1 0 011.414 0zM17 11a1 1 0 100-2h-1a1 1 0 100 2h1zm-7 4a1 1 0 011 1v1a1 1 0 11-2 0v-1a1 1 0 011-1zM5.05 6.464A1 1 0 106.465 5.05l-.708-.707a1 1 0 00-1.414 1.414l.707.707zm1.414 8.486l-.707.707a1 1 0 01-1.414-1.414l.707-.707a1 1 0 011.414 1.414zM4 11a1 1 0 100-2H3a1 1 0 000 2h1z" clip-rule="evenodd"/>
+              </svg>
+              <svg class="theme-toggle__icon theme-toggle__icon--moon" viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg">
+                <path d="M17.293 13.293A8 8 0 016.707 2.707a8.001 8.001 0 1010.586 10.586z"/>
+              </svg>
+            </span>
           </button>
 
-          <dl class="stats-strip" aria-label="Opportunity metrics">
-            <div class="stats-strip__item">
-              <dt class="stats-strip__label">Total</dt>
-              <dd id="stat-total" class="stats-strip__value">0</dd>
-            </div>
-            <div class="stats-strip__divider" aria-hidden="true"></div>
-            <div class="stats-strip__item">
-              <dt class="stats-strip__label">High fit</dt>
-              <dd id="stat-high-fit" class="stats-strip__value stats-strip__value--green">0</dd>
-              <dd id="stat-high-fit-sub" class="stats-strip__sub stats-strip__sub--green">↑ 0 this week</dd>
-            </div>
-            <div class="stats-strip__divider" aria-hidden="true"></div>
-            <div class="stats-strip__item">
-              <dt class="stats-strip__label">Expiring &lt;7d</dt>
-              <dd id="stat-expiring" class="stats-strip__value stats-strip__value--amber">0</dd>
-            </div>
-            <div class="stats-strip__divider" aria-hidden="true"></div>
-            <div class="stats-strip__item">
-              <dt class="stats-strip__label">Applied</dt>
-              <dd id="stat-applied" class="stats-strip__value stats-strip__value--blue">0</dd>
-            </div>
-          </dl>
-        </section>
+          <button id="sources-button" class="ghost-button" type="button">Sources</button>
+          <button id="open-settings" class="ghost-button" type="button">Settings</button>
+          <div id="auth-user" class="auth-user" hidden>
+            <span id="auth-user-email" class="auth-user__email"></span>
+            <button id="sign-out-button" class="ghost-button" type="button">
+              Sign out
+            </button>
+          </div>
+          <button id="fetch-button" class="primary-button" type="button">
+            <span class="button-spinner" aria-hidden="true"></span>
+            <span class="button-label">Refresh results</span>
+          </button>
+        </div>
+      </header>
+
+      <main class="dashboard">
+        <div class="stats-strip" role="group" aria-label="Opportunity metrics. Each figure filters the table.">
+          <button class="stat" type="button" data-stat-filter="total" title="Clear all filters">
+            <span id="stat-total" class="stat__value">0</span>
+            <span class="stat__label">Total</span>
+          </button>
+          <button class="stat" type="button" data-stat-filter="high-fit" aria-pressed="false">
+            <span id="stat-high-fit" class="stat__value stat__value--success">0</span>
+            <span class="stat__label">High fit</span>
+            <span id="stat-high-fit-sub" class="stat__sub">↑ 0 new this week</span>
+          </button>
+          <button class="stat" type="button" data-stat-filter="expiring" aria-pressed="false">
+            <span id="stat-expiring" class="stat__value stat__value--warning">0</span>
+            <span class="stat__label">Expiring in 7 days</span>
+          </button>
+          <button class="stat" type="button" data-stat-filter="applied" aria-pressed="false">
+            <span id="stat-applied" class="stat__value stat__value--info">0</span>
+            <span class="stat__label">Applied</span>
+          </button>
+        </div>
+
+        <button id="settings-summary-button" class="settings-strip" type="button">
+          <span id="notification-settings-status" class="notification-settings__status">
+            Loading notification settings.
+          </span>
+          <span class="settings-strip__edit" aria-hidden="true">Edit alerts</span>
+        </button>
 
         <section class="results-card">
           <div class="results-tabs" role="tablist" aria-label="Opportunity sections">
@@ -231,7 +224,7 @@
               aria-selected="true"
               aria-controls="panel-results"
             >
-              Live Results <span id="tab-results-count" class="tab-count">0</span>
+              Live results <span id="tab-results-count" class="tab-count">0</span>
             </button>
             <button
               id="tab-pending"
@@ -272,7 +265,7 @@
                 <p id="results-section-label" class="section-label">Current matches</p>
                 <h2 id="results-title">Results</h2>
                 <p id="results-summary" class="panel-summary">
-                  Prioritized for visual storytelling, production, and procurement relevance.
+                  Prioritised for visual storytelling, production and procurement relevance.
                 </p>
               </div>
             </div>
@@ -285,7 +278,7 @@
                 <input
                   id="tender-search"
                   type="search"
-                  placeholder="Search title, organization, source, link, or notice ID"
+                  placeholder="Search title, organisation, source, link or notice ID"
                   autocomplete="off"
                 />
                 <button id="tender-search-clear" class="search-clear-button" type="button" aria-label="Clear search" hidden>
@@ -379,7 +372,7 @@
               </div>
             </div>
 
-            <div id="message-box" class="message-box info">
+            <div id="message-box" class="message-box info" role="status" aria-live="polite">
               Loading the latest opportunities.
             </div>
 
@@ -444,7 +437,7 @@
         <div class="sources-drawer__header">
           <div>
             <p class="section-label">Resources</p>
-            <h2 id="sources-drawer-title">Sources & Links</h2>
+            <h2 id="sources-drawer-title">Sources and links</h2>
             <p class="panel-summary">
               Live and manual sources that are relevant to Fairpicture's media-focused tender scan.
             </p>
@@ -554,7 +547,7 @@
           </div>
 
           <div class="detail-modal__title-block">
-            <p id="detail-context-line" class="detail-modal__context-line">Organization · Country · Raw ID</p>
+            <p id="detail-context-line" class="detail-modal__context-line">Organisation · Country · Raw ID</p>
             <h2 id="detail-title">Opportunity</h2>
           </div>
 
@@ -589,7 +582,7 @@
               <dd id="detail-type">—</dd>
             </div>
             <div class="detail-meta-cell">
-              <dt>Organization</dt>
+              <dt>Organisation</dt>
               <dd id="detail-organization">—</dd>
             </div>
             <div class="detail-meta-cell">
@@ -732,7 +725,7 @@
 
           <div class="detail-modal__buttons">
             <button id="detail-action-save" class="detail-primary-button" type="button">
-              Update status
+              Save changes
             </button>
             <a
               id="detail-link"
@@ -764,7 +757,7 @@
             <p class="section-label">Notifications</p>
             <h3 id="notification-settings-title">Email alerts</h3>
             <p class="panel-summary">
-              Configure who gets alerted, how soon expiry alarms fire, and which tender signals stay active.
+              Choose who receives alerts, how far ahead of a deadline they are sent, and which alerts stay on.
             </p>
           </div>
           <button id="settings-close" class="icon-button icon-button--soft" type="button" aria-label="Close settings">
@@ -857,7 +850,7 @@
       </aside>
     </div>
 
-    <div id="toast" class="toast" hidden></div>
+    <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
 
     <script src="./app.js?v=20260413-5"></script>
   </body>
