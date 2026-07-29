@@ -21,6 +21,7 @@ const statusPill = document.querySelector("#status-pill");
 const resultCount = document.querySelector("#result-count");
 const lastUpdated = document.querySelector("#last-updated");
 const toolbarRange = document.querySelector("#toolbar-range");
+const statButtons = Array.from(document.querySelectorAll("[data-stat-filter]"));
 const statTotal = document.querySelector("#stat-total");
 const statHighFit = document.querySelector("#stat-high-fit");
 const statHighFitSub = document.querySelector("#stat-high-fit-sub");
@@ -75,6 +76,8 @@ const detailContextLine = document.querySelector("#detail-context-line");
 const detailTitle = document.querySelector("#detail-title");
 const detailTitleLink = document.querySelector("#detail-title-link");
 const detailFit = document.querySelector("#detail-fit");
+const detailPositionPanel = document.querySelector("#detail-position-panel");
+const detailWarmthPanel = document.querySelector("#detail-warmth-panel");
 const detailPositionBadge = document.querySelector("#detail-position-badge");
 const detailPositionSummary = document.querySelector("#detail-position-summary");
 const detailPositionExact = document.querySelector("#detail-position-exact dd");
@@ -226,6 +229,9 @@ if (themeToggleButton) {
   linkFilter,
 ].forEach((element) => {
   element.addEventListener(element.tagName === "SELECT" ? "change" : "input", () => {
+    if (suppressFilterRender) {
+      return;
+    }
     currentTablePage = 1;
     applyTableState();
   });
@@ -233,6 +239,13 @@ if (themeToggleButton) {
 tableSortButtons.forEach((button) => {
   button.addEventListener("click", () => {
     updateTableSort(button.dataset.sortColumn || "");
+  });
+});
+// The dashboard figures are the fastest route into the list they describe: clicking one
+// applies the filter it counts, clicking it again clears it.
+statButtons.forEach((button) => {
+  button.addEventListener("click", () => {
+    applyStatShortcut(button.dataset.statFilter || "total");
   });
 });
 paginationPrevButton.addEventListener("click", () => changeTablePage(-1));
@@ -1266,6 +1279,7 @@ function applyTableState() {
   updateDashboardStats(resultsStatsSnapshot.length > 0 ? resultsStatsSnapshot : allOpportunities);
   updateTabCounts();
   updateFilterChipUi(filters);
+  syncStatShortcutState();
   renderSourceHealth(getSourceCountsForItems(allOpportunities));
   renderResults(sorted, paginated);
   updatePagination(sorted.length, paginated.length, totalPages);
@@ -1371,6 +1385,62 @@ function updateDashboardStats(items) {
   statHighFitSub.textContent = `↑ ${recentHighFitCount} new this week`;
   statExpiring.textContent = String(expiringSoonCount);
   statApplied.textContent = String(appliedCount);
+}
+
+// Each dashboard figure maps to the filter that produces it. Clicking a figure applies that
+// filter; clicking the active one clears it, so the figures double as the current view state.
+const STAT_SHORTCUTS = {
+  "high-fit": { select: () => fitFilter, value: "high" },
+  expiring: { select: () => deadlineFilter, value: "next-7-days" },
+};
+
+let suppressFilterRender = false;
+
+function setFilterValue(select, value) {
+  if (select.value === value) {
+    return;
+  }
+  select.value = value;
+  select.dispatchEvent(new Event("change", { bubbles: true }));
+}
+
+function applyStatShortcut(key) {
+  if (key === "applied") {
+    setActiveTab(currentOpportunityTab === "applied" ? "results" : "applied");
+    return;
+  }
+
+  if (key === "total") {
+    suppressFilterRender = true;
+    tenderSearchInput.value = "";
+    [fitFilter, warmthFilter, opportunityFilter, sourceFilter, addedFilter, deadlineFilter, statusFilter, linkFilter]
+      .forEach((select) => setFilterValue(select, "all"));
+    suppressFilterRender = false;
+    handleTenderSearchInput();
+    return;
+  }
+
+  const shortcut = STAT_SHORTCUTS[key];
+  if (!shortcut) {
+    return;
+  }
+  const select = shortcut.select();
+  setFilterValue(select, select.value === shortcut.value ? "all" : shortcut.value);
+}
+
+function syncStatShortcutState() {
+  statButtons.forEach((button) => {
+    const key = button.dataset.statFilter;
+    // Total is the reset, not a filter, so it has no pressed state to report.
+    if (key === "total") {
+      return;
+    }
+    const pressed =
+      key === "applied"
+        ? currentOpportunityTab === "applied"
+        : Boolean(STAT_SHORTCUTS[key]) && STAT_SHORTCUTS[key].select().value === STAT_SHORTCUTS[key].value;
+    button.setAttribute("aria-pressed", String(pressed));
+  });
 }
 
 function updateTabCounts() {
@@ -1703,7 +1773,7 @@ function renderCards(opportunities) {
 
           <dl class="opportunity-card__meta">
             <div>
-              <dt>Organization</dt>
+              <dt>Organisation</dt>
               <dd>${safeOrganization}</dd>
             </div>
             <div>
@@ -1949,10 +2019,10 @@ function getDetailFitDescriptor(opportunity) {
   const fitScore = Number(opportunity.fitScore) || 0;
   const fitTone = getFitTone(fitScore);
   if (fitTone === "high") {
-    return { tone: "high", label: `★ ${fitScore}% High fit` };
+    return { tone: "high", label: `${fitScore}% High fit` };
   }
   if (fitTone === "medium") {
-    return { tone: "medium", label: `${fitScore}% Med fit` };
+    return { tone: "medium", label: `${fitScore}% Medium fit` };
   }
   return { tone: "low", label: `${fitScore}% Low fit` };
 }
@@ -2018,7 +2088,7 @@ function formatWarmthClient(client) {
     return "No direct client match";
   }
   const count = Number(client.projectCount) || 0;
-  return `${client.name} — ${count} project${count === 1 ? "" : "s"}`;
+  return `${client.name} · ${count} project${count === 1 ? "" : "s"}`;
 }
 
 function formatWarmthGroup(evidence) {
@@ -2027,7 +2097,7 @@ function formatWarmthGroup(evidence) {
     return "No related organisation or network";
   }
   const names = (group.clients || []).map((client) => client.name).join(", ");
-  return names ? `${group.name} — ${names}` : group.name;
+  return names ? `${group.name} · ${names}` : group.name;
 }
 
 function formatPositionRecords(records) {
@@ -2200,6 +2270,8 @@ function syncDetailTargetStateUi() {
   detailStateButtons.forEach((button) => {
     const isActive = button.dataset.detailTargetState === targetState;
     button.classList.toggle("is-active", isActive);
+    // The group behaves like a radio set, so the selection has to be announced, not just drawn.
+    button.setAttribute("aria-pressed", String(isActive));
     button.dataset.state = button.dataset.detailTargetState || "";
     button.disabled = detailActionBusy;
   });
@@ -2210,7 +2282,7 @@ function syncDetailTargetStateUi() {
 
   detailMissedField.classList.toggle("is-active", targetState === "missed");
   detailMissedReason.disabled = detailActionBusy || targetState !== "missed";
-  detailTargetHelp.textContent = `Currently ${currentStatus.toLowerCase()} — select a new state to update.`;
+  detailTargetHelp.textContent = `Currently ${currentStatus.toLowerCase()}. Select a new state to update.`;
   updateDetailActionButtonState();
 }
 
@@ -2219,7 +2291,7 @@ function getTargetStateSuccessMessage(targetState, missedReason) {
     return "Opportunity moved to Live.";
   }
   if (targetState === "reviewed") {
-    return "Opportunity marked as Reviewed — ops team notified it has been looked at.";
+    return "Marked as reviewed. The ops team has been notified that it was looked at.";
   }
   if (targetState === "applied") {
     return "Opportunity marked as Applied.";
@@ -2314,7 +2386,7 @@ function getResultTabConfig(tab) {
     title: "Results",
     summary: (count) =>
       count
-        ? "Prioritized for visual storytelling, production, and procurement relevance."
+        ? "Prioritised for visual storytelling, production and procurement relevance."
         : "No live opportunities currently match the active filters.",
   };
 }
@@ -2555,7 +2627,10 @@ function setStatus(label, tone) {
   if (labelNode) {
     labelNode.textContent = label;
   }
-  fetchButton.classList.toggle("loading", tone === "loading");
+  const busy = tone === "loading";
+  fetchButton.classList.toggle("loading", busy);
+  fetchButton.setAttribute("aria-busy", String(busy));
+  statusPill.setAttribute("aria-busy", String(busy));
 }
 
 function initializePreferences() {
@@ -2747,7 +2822,7 @@ function syncDetailNavigation() {
   const currentIndex = getSelectedOpportunityIndex();
   const total = sequence.length || allOpportunities.length || 1;
   const displayIndex = currentIndex >= 0 ? currentIndex + 1 : 1;
-  detailKicker.textContent = `${displayIndex} of ${total} · Opportunity Detail`;
+  detailKicker.textContent = `${displayIndex} of ${total} · Opportunity detail`;
   detailPrevButton.disabled = currentIndex <= 0;
   detailNextButton.disabled = currentIndex === -1 || currentIndex >= total - 1;
 }
@@ -2814,6 +2889,10 @@ function openDetailModal(opportunityId) {
   detailFit.textContent = fitDescriptor.label;
   detailPositionBadge.className = `position-badge position-badge--${positionDescriptor.tone}`;
   detailPositionBadge.textContent = positionDescriptor.label;
+  // Most tenders have no country or client evidence at all. Collapsing those panels to a
+  // single line keeps the state controls below them within reach without scrolling.
+  detailPositionPanel.classList.toggle("position-evidence--empty", positionDescriptor.tone === "none");
+  detailWarmthPanel.classList.toggle("position-evidence--empty", warmthDescriptor.tone === "new");
   detailPositionSummary.textContent = positionDescriptor.summary;
   detailPositionExact.textContent = formatPositionRecords(positionDescriptor.evidence.exact);
   detailPositionNearby.textContent = formatPositionRecords(positionDescriptor.evidence.neighbors);
