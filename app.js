@@ -1683,7 +1683,11 @@ function renderTable(opportunities) {
       const fitTone = getFitTone(Number(opportunity.fitScore) || 0);
       const positionDescriptor = getPositionDescriptor(opportunity);
       const warmthDescriptor = getWarmthDescriptor(opportunity);
-      const safeTitle = escapeHtml(opportunity.title);
+      // The same tender has to read the same in the table and in the drawer, and the raw
+      // feed leaves link text ("Open in a new window") and notice IDs in the title.
+      const displayTitle = getOpportunityDisplayTitle(opportunity);
+      const safeTitle = escapeHtml(displayTitle);
+      const safeTitleAttr = escapeAttribute(displayTitle);
       const safeSecondary = escapeHtml(getOpportunitySecondaryLine(opportunity));
       const deadlineMeta = getDeadlineMeta(opportunity);
       const safeLink = escapeAttribute(opportunity.link || "");
@@ -1704,7 +1708,7 @@ function renderTable(opportunities) {
             ${renderPositionBadge(positionDescriptor)}
           </td>
           <td data-label="Opportunity">
-            <p class="opportunity-title">${safeTitle}</p>
+            <p class="opportunity-title" title="${safeTitleAttr}">${safeTitle}</p>
             <small class="opportunity-subline">${safeSecondary}</small>
           </td>
           <td data-label="Source">
@@ -1738,7 +1742,9 @@ function renderCards(opportunities) {
       const fitTone = getFitTone(Number(opportunity.fitScore) || 0);
       const positionDescriptor = getPositionDescriptor(opportunity);
       const warmthDescriptor = getWarmthDescriptor(opportunity);
-      const safeTitle = escapeHtml(opportunity.title);
+      const displayTitle = getOpportunityDisplayTitle(opportunity);
+      const safeTitle = escapeHtml(displayTitle);
+      const safeTitleAttr = escapeAttribute(displayTitle);
       const safeOrganization = escapeHtml(opportunity.organization || "N/A");
       const safeCountries = escapeHtml(
         Array.isArray(opportunity.countryList) && opportunity.countryList.length > 0
@@ -1767,7 +1773,7 @@ function renderCards(opportunities) {
           </div>
 
           <div class="opportunity-card__body">
-            <h3>${safeTitle}</h3>
+            <h3 title="${safeTitleAttr}">${safeTitle}</h3>
             <p class="cell-subtext">${escapeHtml(getOpportunitySecondaryLine(opportunity))}</p>
           </div>
 
@@ -2594,7 +2600,7 @@ function getNotificationSettingsStatusText(settings) {
 
   const recipientCount = Array.isArray(settings.recipientEmails) ? settings.recipientEmails.length : 0;
   return recipientCount
-    ? `Sending to ${recipientCount} recipient${recipientCount === 1 ? "" : "s"}. Expiry alarm: ${settings.expiryAlertDays} day${settings.expiryAlertDays === 1 ? "" : "s"} before deadline.`
+    ? `Sending to ${recipientCount} recipient${recipientCount === 1 ? "" : "s"}. Expiry alerts ${settings.expiryAlertDays} day${settings.expiryAlertDays === 1 ? "" : "s"} before the deadline.`
     : "Notifications enabled, but no recipients are configured yet.";
 }
 

@@ -1449,12 +1449,19 @@ tbody td {
   color: var(--colour-text-secondary);
 }
 
+/* Real tender titles run to 20+ words. Unclamped they push rows past 110px and
+   drop the table to four visible results; the full text stays in the tooltip
+   and the drawer. */
 .opportunity-title {
   margin: 0 0 3px;
-  max-width: 46ch;
+  max-width: 52ch;
   color: var(--colour-text-primary);
   font-size: var(--font-size-sm);
   line-height: 1.4;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
 }
 
 .source-tag {
