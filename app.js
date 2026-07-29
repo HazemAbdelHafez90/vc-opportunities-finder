@@ -388,7 +388,7 @@ async function bootstrapAuth() {
       void applyAuthSession(sessionState);
     });
   } catch (error) {
-    setAuthMessage(error.message || "Could not initialize sign-in.", true);
+    setAuthMessage(error.message || "Could not initialise sign-in.", true);
     setAuthBusy(false);
     setBootState(false);
     authShell.hidden = false;
@@ -523,7 +523,7 @@ function setAuthFlowMode(mode) {
   authPasswordInput.autocomplete = isPasswordReset ? "new-password" : "current-password";
   authPasswordConfirmField.hidden = !isPasswordReset;
   authPasswordConfirmInput.required = isPasswordReset;
-  authSubmitButton.textContent = isPasswordReset ? "Set password" : "Sign in to Radar";
+  authSubmitButton.textContent = isPasswordReset ? "Set password" : "Sign in";
 }
 
 function setBootState(isVisible, message = "") {
