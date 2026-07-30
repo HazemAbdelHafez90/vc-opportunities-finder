@@ -15,7 +15,7 @@ create table if not exists public.opportunities (
   fit_score integer not null default 0,
   fit_label text not null default 'Low fit',
   fit_reasons jsonb not null default '[]'::jsonb,
-  action_status text null check (action_status in ('pending', 'applied', 'missed', 'reviewed')),
+  action_status text null check (action_status in ('pending', 'applied', 'missed', 'reviewed', 'won')),
   action_reason text null check (action_reason in ('expired', 'not_relevant', 'not_interested', 'duplicate')),
   action_notes text null,
   action_taken_at timestamptz null,
@@ -64,9 +64,11 @@ alter table public.opportunities
 alter table public.opportunities
   drop constraint if exists opportunities_status_check;
 
+-- 'won' is terminal and sits downstream of 'applied': every won tender was applied to first.
+-- The funnel on the Insights tab counts it inside Applied, not beside it.
 alter table public.opportunities
   add constraint opportunities_action_status_check
-  check (action_status in ('pending', 'applied', 'missed', 'reviewed'));
+  check (action_status in ('pending', 'applied', 'missed', 'reviewed', 'won'));
 
 alter table public.opportunities
   add constraint opportunities_action_reason_check

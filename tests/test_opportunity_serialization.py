@@ -40,6 +40,35 @@ class OpportunitySerializationTests(unittest.TestCase):
         self.assertEqual(result["fairpicturePosition"]["tone"], "strong")
         self.assertIn("Kenya has 1 project in 2026", result["fairpicturePosition"]["summary"])
 
+    def test_won_survives_normalisation(self):
+        """`won` is the terminal funnel step — if it normalises away, the Insights funnel reads zero."""
+        row = {
+            "id": "opportunity-2",
+            "title": "Field photography retainer",
+            "organization": "SWISSAID",
+            "countries": ["Uganda"],
+            "type": "Tender",
+            "link": "https://example.test/won",
+            "source": "UNGM",
+            "matched_sources": ["UNGM"],
+            "fit_score": 91,
+            "fit_label": "High fit",
+            "fit_reasons": [],
+            "action_status": "won",
+            "action_reason": None,
+            "action_notes": None,
+            "action_taken_at": "2026-05-20T00:00:00+00:00",
+            "status": "open",
+            "first_seen_at": "2026-05-17T00:00:00+00:00",
+            "last_synced_at": "2026-05-20T00:00:00+00:00",
+        }
+
+        result = serialize_opportunity_row(row)
+
+        self.assertEqual(result["actionStatus"], "won")
+        self.assertEqual(result["actionTakenAt"], "2026-05-20T00:00:00+00:00")
+        self.assertEqual(result["clientWarmth"]["groupKey"], "client:swissaid")
+
 
 if __name__ == "__main__":
     unittest.main()

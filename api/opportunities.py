@@ -34,9 +34,11 @@ class handler(BaseHTTPRequestHandler):
 
 def filter_items_by_bucket(items: list[dict], bucket: str) -> list[dict]:
     if bucket == "applied":
+        # A won tender is still a tender we applied to — it stays on this tab rather than
+        # disappearing into a state the ops team has no view for.
         return [
             item for item in items
-            if item.get("actionStatus") == "applied"
+            if item.get("actionStatus") in {"applied", "won"}
         ]
 
     if bucket == "pending":

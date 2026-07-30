@@ -57,6 +57,15 @@ const resultsTabCount = document.querySelector("#tab-results-count");
 const appliedTabCount = document.querySelector("#tab-applied-count");
 const missedTabCount = document.querySelector("#tab-missed-count");
 const resultsPanel = document.querySelector("#panel-results");
+const insightsTab = document.querySelector("#tab-insights");
+const insightsPanel = document.querySelector("#panel-insights");
+const insightsStatus = document.querySelector("#insights-status");
+const insightsBody = document.querySelector("#insights-body");
+const insightsFunnel = document.querySelector("#insights-funnel");
+const insightsFunnelLeak = document.querySelector("#insights-funnel-leak");
+const insightsMarket = document.querySelector("#insights-market");
+const insightsMarketEmpty = document.querySelector("#insights-market-empty");
+const insightsMarketToggles = Array.from(document.querySelectorAll("[data-market-filter]"));
 const resultsSectionLabel = document.querySelector("#results-section-label");
 const resultsTitle = document.querySelector("#results-title");
 const resultsSummary = document.querySelector("#results-summary");
@@ -145,6 +154,7 @@ const TAB_QUERY_MAP = new Map([
   ["pending", "pending"],
   ["applied", "applied"],
   ["missed", "missed"],
+  ["insights", "insights"],
 ]);
 let allOpportunities = [];
 let resultsStatsSnapshot = []; // frozen snapshot from "results" bucket — drives stat cards regardless of active tab
@@ -165,6 +175,12 @@ let authProvider = "supabase";
 let authBypassMode = false;
 let tableSortState = { column: "fit", direction: "desc" };
 let detailActionBusy = false;
+// The Insights tab aggregates the whole corpus, so it keeps its own dataset rather than
+// borrowing `allOpportunities`, which only ever holds the active tab's bucket.
+let insightsDataset = null;
+let insightsMarketFilter = "all";
+let insightsRequestId = 0;
+let expandedMarketGroupKey = null;
 const bucketCounts = {
   results: 0,
   applied: 0,
@@ -187,6 +203,14 @@ resultsTab.addEventListener("click", () => setActiveTab("results"));
 pendingTab.addEventListener("click", () => setActiveTab("pending"));
 appliedTab.addEventListener("click", () => setActiveTab("applied"));
 missedTab.addEventListener("click", () => setActiveTab("missed"));
+insightsTab.addEventListener("click", () => setActiveTab("insights"));
+insightsMarketToggles.forEach((button) => {
+  button.addEventListener("click", () => {
+    insightsMarketFilter = button.dataset.marketFilter === "cold" ? "cold" : "all";
+    renderInsights();
+  });
+});
+insightsMarket.addEventListener("click", handleMarketRowClick);
 resultsBody.addEventListener("click", handleOpportunityListClick);
 cardsView.addEventListener("click", handleOpportunityListClick);
 detailBackdrop.addEventListener("click", closeDetailModal);
@@ -559,6 +583,8 @@ async function applyAuthSession(session) {
 
   if (!isSignedIn) {
     allOpportunities = [];
+    insightsDataset = null;
+    expandedMarketGroupKey = null;
     clearAdminSession();
     authPasswordInput.value = "";
     closeSettingsModal();
@@ -772,6 +798,9 @@ async function loadInitialData() {
     updateSyncMeta(sync);
     debugLog("loadInitialData:sync", { currentOpportunityTab, sync });
     await reloadOpportunitiesFromApi();
+    if (currentOpportunityTab === "insights") {
+      await loadInsights();
+    }
     setStatus(allOpportunities.length ? "Cached" : "Ready", "success");
   } catch (error) {
     allOpportunities = [];
@@ -984,6 +1013,7 @@ async function handleFetch() {
 
   try {
     const refreshResponse = await refreshOpportunities();
+    invalidateInsights();
     await reloadOpportunitiesFromApi({ preserveMessage: true });
     updateSyncMeta(refreshResponse?.sync || null, refreshResponse?.sources || null);
     const notificationMessage = getNotificationSummaryMessage(refreshResponse?.notifications || null);
@@ -2157,6 +2187,11 @@ function getDetailStatusDescriptor(opportunity) {
 }
 
 function getStatusLabel(opportunity) {
+  // Won is terminal — a nearby deadline on something we already won is not "Expiring".
+  if (opportunity.actionStatus === "won") {
+    return "Won";
+  }
+
   if (isExpiringSoon(opportunity)) {
     return "Expiring";
   }
@@ -2192,6 +2227,9 @@ function getStatusTone(opportunity) {
   }
   if (opportunity.actionStatus === "reviewed") {
     return "reviewed";
+  }
+  if (opportunity.actionStatus === "won") {
+    return "won";
   }
   if (opportunity.actionStatus === "applied") {
     return "applied";
@@ -2256,6 +2294,9 @@ function getDetailTargetState(opportunity) {
   if (opportunity.actionStatus === "reviewed") {
     return "reviewed";
   }
+  if (opportunity.actionStatus === "won") {
+    return "won";
+  }
   if (opportunity.actionStatus === "applied") {
     return "applied";
   }
@@ -2302,6 +2343,9 @@ function getTargetStateSuccessMessage(targetState, missedReason) {
   if (targetState === "applied") {
     return "Opportunity marked as Applied.";
   }
+  if (targetState === "won") {
+    return "Marked as Won. It now counts in the Insights funnel.";
+  }
   if (targetState === "pending") {
     return "Opportunity marked as Pending.";
   }
@@ -2326,6 +2370,9 @@ function getActionLabel(actionStatus, missedReason = "") {
   }
   if (actionStatus === "applied") {
     return "Applied";
+  }
+  if (actionStatus === "won") {
+    return "Won";
   }
   if (actionStatus === "missed") {
     return `Missed${missedReason ? `: ${getMissedReasonLabel(missedReason)}` : ""}`;
@@ -2742,14 +2789,29 @@ function setActiveTab(tab, options = {}) {
   pendingTab.classList.toggle("active", currentOpportunityTab === "pending");
   appliedTab.classList.toggle("active", currentOpportunityTab === "applied");
   missedTab.classList.toggle("active", currentOpportunityTab === "missed");
+  insightsTab.classList.toggle("active", currentOpportunityTab === "insights");
 
   resultsTab.setAttribute("aria-selected", String(currentOpportunityTab === "results"));
   pendingTab.setAttribute("aria-selected", String(currentOpportunityTab === "pending"));
   appliedTab.setAttribute("aria-selected", String(currentOpportunityTab === "applied"));
   missedTab.setAttribute("aria-selected", String(currentOpportunityTab === "missed"));
+  insightsTab.setAttribute("aria-selected", String(currentOpportunityTab === "insights"));
 
-  resultsPanel.hidden = false;
+  const showingInsights = currentOpportunityTab === "insights";
+  resultsPanel.hidden = showingInsights;
+  insightsPanel.hidden = !showingInsights;
   currentTablePage = 1;
+
+  if (showingInsights) {
+    // `silent` runs before auth has bootstrapped — loading here would just 401. loadInitialData
+    // picks the tab back up once a session exists.
+    if (!options.silent) {
+      loadInsights().catch(() => {
+        debugLog("setActiveTab:insights-failed", { tab: currentOpportunityTab });
+      });
+    }
+    return;
+  }
 
   if (!options.silent) {
     reloadOpportunitiesFromApi().catch(() => {
@@ -2757,6 +2819,375 @@ function setActiveTab(tab, options = {}) {
       applyTableState();
     });
   }
+}
+
+/* ============================================================
+   Insights
+   Two questions, two charts, no time axis.
+
+   1. Our funnel — seen → worth bidding → applied → won. At one
+      win, a monthly trend line is noise; the drop-off between
+      steps is the only thing that separates "we are not bidding
+      enough" from "we bid and lose", and those need opposite
+      responses.
+   2. Who is buying — organisations ranked by tenders issued,
+      coloured by relationship. A long bar with no relationship
+      is a repeat buyer that has never heard of Fairpicture.
+
+   Everything here aggregates a dataset already fetched from
+   /api/opportunities. No chart library, no extra API route.
+   ============================================================ */
+
+const QUALIFIED_FIT_SCORE = 40; // matches the Medium threshold in getFitBadgeLabel
+const MARKET_CHART_LIMIT = 25;
+
+function invalidateInsights() {
+  insightsDataset = null;
+  expandedMarketGroupKey = null;
+  if (currentOpportunityTab === "insights") {
+    loadInsights().catch(() => {
+      debugLog("invalidateInsights:reload-failed", {});
+    });
+  }
+}
+
+async function loadInsights() {
+  const requestId = (insightsRequestId += 1);
+
+  if (insightsDataset) {
+    renderInsights();
+    return;
+  }
+
+  insightsBody.hidden = true;
+  insightsStatus.hidden = false;
+  insightsStatus.textContent = "Loading insights.";
+  insightsStatus.dataset.tone = "loading";
+
+  try {
+    const items = await fetchOpportunities({ bucket: "all" });
+    if (requestId !== insightsRequestId) {
+      return;
+    }
+    insightsDataset = items;
+    renderInsights();
+  } catch (error) {
+    if (requestId !== insightsRequestId) {
+      return;
+    }
+    insightsBody.hidden = true;
+    insightsStatus.hidden = false;
+    insightsStatus.dataset.tone = "error";
+    insightsStatus.textContent = error.message || "Could not load insights.";
+    throw error;
+  }
+}
+
+function renderInsights() {
+  const items = Array.isArray(insightsDataset) ? insightsDataset : [];
+
+  if (items.length === 0) {
+    insightsBody.hidden = true;
+    insightsStatus.hidden = false;
+    insightsStatus.dataset.tone = "empty";
+    insightsStatus.textContent = "No tenders on record yet. Run a refresh to populate the database.";
+    return;
+  }
+
+  insightsStatus.hidden = true;
+  insightsBody.hidden = false;
+
+  renderFunnel(items);
+  renderMarketChart(items);
+}
+
+function buildFunnel(items) {
+  const qualified = items.filter((item) => (Number(item.fitScore) || 0) >= QUALIFIED_FIT_SCORE);
+  const applied = items.filter((item) => item.actionStatus === "applied" || item.actionStatus === "won");
+  const won = items.filter((item) => item.actionStatus === "won");
+
+  // "Leaked" is the number that actually indicts the desk. Missed-as-not-relevant is a healthy
+  // filter doing its job; a qualified tender that expired with no decision on it is not.
+  const leaked = qualified.filter(
+    (item) =>
+      item.missedReason === "expired" ||
+      ((item.status === "expired" || item.status === "stale") && !item.actionStatus)
+  );
+
+  const latencies = items
+    .map((item) => getTriageLatencyDays(item))
+    .filter((value) => value !== null);
+
+  return {
+    steps: [
+      { key: "seen", label: "Seen", count: items.length, note: "Every tender the radar has collected" },
+      {
+        key: "qualified",
+        label: "Worth bidding",
+        count: qualified.length,
+        note: `Medium fit or better (${QUALIFIED_FIT_SCORE}+)`,
+      },
+      { key: "applied", label: "Applied", count: applied.length, note: "Bids submitted, including wins" },
+      { key: "won", label: "Won", count: won.length, note: "Contracts awarded to us" },
+    ],
+    leakedCount: leaked.length,
+    qualifiedCount: qualified.length,
+    appliedCount: applied.length,
+    wonCount: won.length,
+    medianLatencyDays: median(latencies),
+  };
+}
+
+function getTriageLatencyDays(opportunity) {
+  if (!opportunity.actionTakenAt || !opportunity.addedAt) {
+    return null;
+  }
+  const takenAt = new Date(opportunity.actionTakenAt).getTime();
+  const addedAt = new Date(opportunity.addedAt).getTime();
+  if (Number.isNaN(takenAt) || Number.isNaN(addedAt) || takenAt < addedAt) {
+    return null;
+  }
+  return (takenAt - addedAt) / 86400000;
+}
+
+function median(values) {
+  if (!values.length) {
+    return null;
+  }
+  const sorted = [...values].sort((left, right) => left - right);
+  const mid = Math.floor(sorted.length / 2);
+  return sorted.length % 2 === 0 ? (sorted[mid - 1] + sorted[mid]) / 2 : sorted[mid];
+}
+
+function renderFunnel(items) {
+  const funnel = buildFunnel(items);
+  const total = funnel.steps[0].count || 1;
+
+  insightsFunnel.innerHTML = funnel.steps
+    .map((step, index) => {
+      const previous = index === 0 ? null : funnel.steps[index - 1];
+      const conversion =
+        previous && previous.count > 0 ? Math.round((step.count / previous.count) * 100) : null;
+      // Width tracks the top of the funnel so the collapse is legible at a glance; the floor
+      // keeps a single win from rendering as a zero-width sliver.
+      const width = Math.max((step.count / total) * 100, step.count > 0 ? 1.5 : 0);
+
+      return `
+        <li class="funnel__step" data-step="${escapeAttribute(step.key)}">
+          <div class="funnel__head">
+            <span class="funnel__label">${escapeHtml(step.label)}</span>
+            <span class="funnel__value">${step.count.toLocaleString()}</span>
+          </div>
+          <div class="funnel__track">
+            <div class="funnel__bar" style="width: ${width.toFixed(2)}%"></div>
+          </div>
+          <div class="funnel__foot">
+            <span class="funnel__note">${escapeHtml(step.note)}</span>
+            ${
+              conversion === null
+                ? ""
+                : `<span class="funnel__conversion">${conversion}% of ${escapeHtml(previous.label.toLowerCase())}</span>`
+            }
+          </div>
+        </li>
+      `;
+    })
+    .join("");
+
+  insightsFunnelLeak.innerHTML = buildFunnelReading(funnel);
+}
+
+function buildFunnelReading(funnel) {
+  const parts = [];
+
+  if (funnel.appliedCount === 0) {
+    parts.push(
+      "Nothing is marked as Applied yet, so the funnel cannot tell you where the loss is. Start by recording bids as they go out."
+    );
+  } else if (funnel.appliedCount < 8) {
+    // A win rate off a handful of bids is arithmetic, not evidence. Say so rather than
+    // printing a percentage the team will quote back later as if it meant something.
+    parts.push(
+      `<strong>${funnel.wonCount} won from ${funnel.appliedCount} bids.</strong> That is too few bids to read a win rate from — the number worth moving is bids submitted, not conversion. ${funnel.qualifiedCount.toLocaleString()} tenders cleared the fit bar and ${(funnel.qualifiedCount - funnel.appliedCount).toLocaleString()} of them were never bid on.`
+    );
+  } else {
+    const winRate = Math.round((funnel.wonCount / funnel.appliedCount) * 100);
+    parts.push(
+      `<strong>${funnel.wonCount} won from ${funnel.appliedCount} bids — a ${winRate}% win rate.</strong> ${funnel.qualifiedCount.toLocaleString()} tenders cleared the fit bar.`
+    );
+  }
+
+  if (funnel.leakedCount > 0) {
+    parts.push(
+      `<strong>${funnel.leakedCount.toLocaleString()}</strong> qualified ${funnel.leakedCount === 1 ? "tender" : "tenders"} expired with no bid decision recorded. That is the leak worth closing first — it is a triage failure, not a filtering one.`
+    );
+  }
+
+  if (funnel.medianLatencyDays !== null) {
+    parts.push(
+      `Median time from a tender appearing to someone acting on it: <strong>${formatLatency(funnel.medianLatencyDays)}</strong>.`
+    );
+  }
+
+  return parts.map((part) => `<span>${part}</span>`).join(" ");
+}
+
+function formatLatency(days) {
+  if (days < 1) {
+    const hours = Math.max(Math.round(days * 24), 1);
+    return `${hours} hour${hours === 1 ? "" : "s"}`;
+  }
+  const rounded = Math.round(days * 10) / 10;
+  return `${rounded} day${rounded === 1 ? "" : "s"}`;
+}
+
+function buildMarketGroups(items) {
+  const groups = new Map();
+
+  items.forEach((item) => {
+    const descriptor = getWarmthDescriptor(item);
+    // groupKey is computed server-side off the same normalisation the client roster matcher
+    // uses, so every spelling of a known client collapses onto one row. Falling back to the
+    // raw organisation would re-split them.
+    const key = item.clientWarmth?.groupKey || `raw:${String(item.organization || "").toLowerCase()}`;
+    if (!key || key === "raw:") {
+      return;
+    }
+
+    let group = groups.get(key);
+    if (!group) {
+      group = {
+        key,
+        label: item.clientWarmth?.groupLabel || item.organization || "Unattributed",
+        tone: descriptor.tone,
+        warmthScore: descriptor.score,
+        warmthLabel: descriptor.label,
+        countries: new Set(),
+        bestFit: 0,
+        latestSeen: null,
+        items: [],
+      };
+      groups.set(key, group);
+    }
+
+    if (descriptor.score > group.warmthScore) {
+      group.tone = descriptor.tone;
+      group.warmthScore = descriptor.score;
+      group.warmthLabel = descriptor.label;
+    }
+
+    (item.countryList || []).forEach((country) => group.countries.add(country));
+    group.bestFit = Math.max(group.bestFit, Number(item.fitScore) || 0);
+
+    const seenAt = item.addedAt ? new Date(item.addedAt).getTime() : NaN;
+    if (!Number.isNaN(seenAt) && (group.latestSeen === null || seenAt > group.latestSeen)) {
+      group.latestSeen = seenAt;
+    }
+
+    group.items.push(item);
+  });
+
+  return Array.from(groups.values()).sort(
+    (left, right) => right.items.length - left.items.length || right.bestFit - left.bestFit
+  );
+}
+
+function renderMarketChart(items) {
+  const allGroups = buildMarketGroups(items);
+  const groups = (insightsMarketFilter === "cold"
+    ? allGroups.filter((group) => group.tone === "new")
+    : allGroups
+  ).slice(0, MARKET_CHART_LIMIT);
+
+  insightsMarketToggles.forEach((button) => {
+    const isActive = (button.dataset.marketFilter || "all") === insightsMarketFilter;
+    button.classList.toggle("is-active", isActive);
+    button.setAttribute("aria-pressed", String(isActive));
+  });
+
+  if (groups.length === 0) {
+    insightsMarket.innerHTML = "";
+    insightsMarketEmpty.hidden = false;
+    insightsMarketEmpty.textContent =
+      insightsMarketFilter === "cold"
+        ? "Every organisation on record already has a relationship with Fairpicture."
+        : "No organisations could be attributed from the tenders on record.";
+    return;
+  }
+
+  insightsMarketEmpty.hidden = true;
+  const maxCount = groups[0].items.length || 1;
+
+  insightsMarket.innerHTML = groups
+    .map((group) => {
+      const count = group.items.length;
+      const width = Math.max((count / maxCount) * 100, 2);
+      const isExpanded = expandedMarketGroupKey === group.key;
+      const countries = Array.from(group.countries).filter(Boolean);
+      const countryLabel =
+        countries.length === 0
+          ? "No country listed"
+          : countries.length <= 3
+            ? countries.join(", ")
+            : `${countries.slice(0, 3).join(", ")} +${countries.length - 3}`;
+
+      return `
+        <li class="market-row${isExpanded ? " is-expanded" : ""}" data-market-group="${escapeAttribute(group.key)}">
+          <button class="market-row__button" type="button" aria-expanded="${isExpanded}">
+            <span class="market-row__label">
+              <span class="market-row__name">${escapeHtml(group.label)}</span>
+              <span class="market-row__warmth market-row__warmth--${escapeAttribute(group.tone)}">${escapeHtml(
+                group.tone === "new" ? "No relationship" : group.warmthLabel
+              )}</span>
+            </span>
+            <span class="market-row__track">
+              <span class="market-row__bar market-row__bar--${escapeAttribute(group.tone)}" style="width: ${width.toFixed(2)}%"></span>
+            </span>
+            <span class="market-row__count">${count}</span>
+          </button>
+          <p class="market-row__meta">
+            ${escapeHtml(countryLabel)} · best fit ${group.bestFit} · last seen ${escapeHtml(
+              group.latestSeen ? formatCompactDate(new Date(group.latestSeen).toISOString()) : "—"
+            )}
+          </p>
+          ${isExpanded ? renderMarketRowDetail(group) : ""}
+        </li>
+      `;
+    })
+    .join("");
+}
+
+function renderMarketRowDetail(group) {
+  const rows = [...group.items]
+    .sort((left, right) => (Number(right.fitScore) || 0) - (Number(left.fitScore) || 0))
+    .map((item) => {
+      const title = sanitizeOpportunityTitle(item.title);
+      const label = `${formatCompactDate(item.addedAt)} · ${getStatusLabel(item)}`;
+      const body = item.link
+        ? `<a href="${escapeAttribute(item.link)}" target="_blank" rel="noreferrer">${escapeHtml(title)}</a>`
+        : escapeHtml(title);
+      return `
+        <li class="market-detail__item">
+          <span class="market-detail__fit" data-fit="${escapeAttribute(getFitBadgeLabel(item).toLowerCase())}">${getFitBadgeLabel(item)}</span>
+          <span class="market-detail__title">${body}</span>
+          <span class="market-detail__meta">${escapeHtml(label)}</span>
+        </li>
+      `;
+    })
+    .join("");
+
+  return `<ul class="market-detail">${rows}</ul>`;
+}
+
+function handleMarketRowClick(event) {
+  const row = event.target.closest("[data-market-group]");
+  if (!row || event.target.closest("a")) {
+    return;
+  }
+
+  const key = row.getAttribute("data-market-group");
+  expandedMarketGroupKey = expandedMarketGroupKey === key ? null : key;
+  renderInsights();
 }
 
 function initializeDebugMode() {
@@ -2986,6 +3417,7 @@ async function handleDetailActionSubmit() {
       allOpportunities = allOpportunities.map((item) =>
         item.id === updatedItem.id ? updatedItem : item
       );
+      invalidateInsights();
       await reloadOpportunitiesFromApi();
       const successMessage = getTargetStateSuccessMessage(targetState, missedReason);
       setMessage(

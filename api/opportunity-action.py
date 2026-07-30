@@ -5,7 +5,7 @@ from http.server import BaseHTTPRequestHandler
 
 from api._lib import AuthError, get_authenticated_user, update_opportunity_action
 
-ALLOWED_TARGET_STATES = {"live", "reviewed", "pending", "applied", "missed", "expired", "archived"}
+ALLOWED_TARGET_STATES = {"live", "reviewed", "pending", "applied", "won", "missed", "expired", "archived"}
 ALLOWED_MISSED_REASONS = {"expired", "not_relevant", "not_interested", "duplicate", ""}
 
 

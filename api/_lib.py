@@ -495,7 +495,10 @@ def get_open_opportunities_from_db(limit: int = 200) -> list[dict[str, Any]]:
     return [serialize_opportunity_row(row) for row in rows]
 
 
-def get_managed_opportunities_from_db(limit: int = 400) -> list[dict[str, Any]]:
+# The limit has to clear the whole retained history, not just one screen of it. Truncation here
+# is ordered by status, so a low cap silently drops expired rows first — which is exactly the
+# historical demand signal the Insights tab aggregates over.
+def get_managed_opportunities_from_db(limit: int = 5000) -> list[dict[str, Any]]:
     rows = supabase_request(
         "GET",
         "opportunities",
@@ -1486,6 +1489,8 @@ def update_opportunity_action(
         normalized_action_status = "pending"
     elif normalized_target_state == "applied":
         normalized_action_status = "applied"
+    elif normalized_target_state == "won":
+        normalized_action_status = "won"
     elif normalized_target_state == "missed":
         normalized_action_status = "missed"
         normalized_action_reason = normalize_action_reason(action_reason, "missed", "open")
@@ -1644,6 +1649,8 @@ def normalize_action_status(value: Any) -> str | None:
         return "pending"
     if normalized == "applied":
         return "applied"
+    if normalized == "won":
+        return "won"
     if normalized in {"missed", "not_relevant", "not_interested"}:
         return "missed"
     return None

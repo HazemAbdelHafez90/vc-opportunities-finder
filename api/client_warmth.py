@@ -224,6 +224,8 @@ def get_client_warmth(organization: Any, link: Any = "") -> dict[str, Any]:
         )
 
     client = match_roster_client(canonical, domain)
+    group_key, group_label = build_org_group(organization, link, client)
+
     if client:
         score = 90 + min(client["projectCount"], 10)
         return build_warmth(
@@ -234,6 +236,8 @@ def get_client_warmth(organization: Any, link: Any = "") -> dict[str, Any]:
             None,
             None,
             build_client_summary(client),
+            group_key,
+            group_label,
         )
 
     family = match_family(canonical)
@@ -246,6 +250,8 @@ def get_client_warmth(organization: Any, link: Any = "") -> dict[str, Any]:
             family,
             None,
             build_group_summary(family, "is part of the {name} family"),
+            group_key,
+            group_label,
         )
 
     network = match_network(canonical)
@@ -258,6 +264,8 @@ def get_client_warmth(organization: Any, link: Any = "") -> dict[str, Any]:
             None,
             network,
             build_group_summary(network, "belongs to {name}"),
+            group_key,
+            group_label,
         )
 
     return build_warmth(
@@ -268,6 +276,8 @@ def get_client_warmth(organization: Any, link: Any = "") -> dict[str, Any]:
         None,
         None,
         f"No existing Fairpicture relationship was found for {display_organization(organization)}.",
+        group_key,
+        group_label,
     )
 
 
@@ -350,6 +360,8 @@ def build_warmth(
     family: dict[str, Any] | None,
     network: dict[str, Any] | None,
     summary: str,
+    group_key: str = "",
+    group_label: str = "",
 ) -> dict[str, Any]:
     return {
         "label": label,
@@ -361,7 +373,36 @@ def build_warmth(
             "network": network,
         },
         "summary": summary,
+        "groupKey": group_key,
+        "groupLabel": group_label,
     }
+
+
+def build_org_group(organization: Any, link: Any, client: dict[str, Any] | None) -> tuple[str, str]:
+    """Stable key for rolling many tender rows up into one organisation.
+
+    Raw `organization` strings arrive from five different scrapers, so the same body shows up as
+    "Caritas Osterreich", "CARITAS Österreich" and "caritas oesterreich". Grouping on the raw
+    string splits one buyer into three, which is the failure mode that makes an account chart
+    look right and be wrong. A roster hit is the strongest key available — every spelling that
+    matched the same client collapses onto that client's canonical name. Everything else falls
+    back to the normalised org name, then the link's domain label.
+
+    Deliberately does NOT collapse sister orgs: "Caritas Schweiz" and "Caritas Österreich" are
+    separate procurement desks, and the point of the chart is knowing which desk to call.
+    """
+    if client:
+        return f"client:{canonical_org_name(client['name'])}", client["name"]
+
+    canonical = canonical_org_name(organization)
+    if canonical:
+        return f"org:{canonical}", display_organization(organization)
+
+    domain = extract_domain_label(link)
+    if domain:
+        return f"domain:{domain}", domain
+
+    return "", ""
 
 
 def build_client_summary(client: dict[str, Any]) -> str:

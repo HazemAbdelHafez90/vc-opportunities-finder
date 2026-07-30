@@ -126,5 +126,49 @@ class ClientWarmthTests(unittest.TestCase):
         self.assertEqual(extract_domain_label(""), "")
 
 
+class OrgGroupKeyTests(unittest.TestCase):
+    """The Insights market chart rolls tenders up by groupKey.
+
+    If two spellings of the same buyer produce different keys, one organisation renders as two
+    shorter bars and the chart understates exactly the repeat buyers it exists to surface.
+    """
+
+    def test_spelling_variants_of_one_client_share_a_group_key(self):
+        variants = [
+            ("Deutsche Welthungerhilfe", ""),
+            ("DEUTSCHE WELTHUNGERHILFE e.V.", ""),
+            ("Welthungerhilfe", "https://welthungerhilfe.de/tenders/1"),
+        ]
+        keys = {get_client_warmth(org, link)["groupKey"] for org, link in variants}
+
+        self.assertEqual(len(keys), 1, f"expected one group key, got {keys}")
+        self.assertTrue(keys.pop().startswith("client:"))
+
+    def test_sister_orgs_stay_separate_groups(self):
+        """Separate procurement desks — collapsing them would hide which one to call."""
+        austria = get_client_warmth("Caritas Österreich", "")
+        switzerland = get_client_warmth("Caritas Schweiz", "")
+
+        self.assertNotEqual(austria["groupKey"], switzerland["groupKey"])
+
+    def test_unknown_org_groups_on_normalised_name(self):
+        result = get_client_warmth("Fresh Donor Trust Ltd", "https://freshdonor.example/t/1")
+
+        self.assertEqual(result["tone"], "new")
+        self.assertEqual(result["groupKey"], "org:fresh donor trust")
+        self.assertEqual(result["groupLabel"], "Fresh Donor Trust Ltd")
+
+    def test_missing_org_falls_back_to_the_link_domain(self):
+        result = get_client_warmth("N/A", "https://procurement.example.org/notice/9")
+
+        self.assertEqual(result["groupKey"], "domain:example")
+
+    def test_unattributable_row_has_no_group_key(self):
+        result = get_client_warmth("", "")
+
+        self.assertEqual(result["groupKey"], "")
+        self.assertEqual(result["groupLabel"], "")
+
+
 if __name__ == "__main__":
     unittest.main()
