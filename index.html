@@ -23,7 +23,7 @@
       crossorigin
     />
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-    <link rel="stylesheet" href="./styles.css?v=20260730-1" />
+    <link rel="stylesheet" href="./styles.css?v=20260806-1" />
     <script>
       (function() {
         try {
@@ -187,6 +187,33 @@
       </header>
 
       <main class="dashboard">
+        <!-- Desk and Insights are different datasets at different scopes, not two filters of one
+             list. They sit at this level so the desk's live-bucket metrics never render beside
+             the all-time aggregates and contradict them. -->
+        <div class="view-switch" role="tablist" aria-label="Views">
+          <button
+            id="view-desk"
+            class="view-switch__button is-active"
+            type="button"
+            role="tab"
+            aria-selected="true"
+            aria-controls="desk-view"
+          >
+            Desk
+          </button>
+          <button
+            id="view-insights"
+            class="view-switch__button"
+            type="button"
+            role="tab"
+            aria-selected="false"
+            aria-controls="panel-insights"
+          >
+            Insights
+          </button>
+        </div>
+
+        <div id="desk-view" role="tabpanel" aria-labelledby="view-desk">
         <div class="stats-strip" role="group" aria-label="Opportunity metrics. Each figure filters the table.">
           <button class="stat" type="button" data-stat-filter="total" title="Clear all filters">
             <span id="stat-total" class="stat__value">0</span>
@@ -256,16 +283,6 @@
               aria-controls="panel-results"
             >
               Missed <span id="tab-missed-count" class="tab-count">0</span>
-            </button>
-            <button
-              id="tab-insights"
-              class="tab-button tab-button--trailing"
-              type="button"
-              role="tab"
-              aria-selected="false"
-              aria-controls="panel-insights"
-            >
-              Insights
             </button>
           </div>
 
@@ -437,14 +454,17 @@
 
             <div id="cards-view" class="cards-grid" hidden></div>
           </div>
+        </section>
+        </div>
 
-          <div id="panel-insights" class="tab-panel" role="tabpanel" aria-labelledby="tab-insights" hidden>
+        <section id="panel-insights" class="results-card" role="tabpanel" aria-labelledby="view-insights" hidden>
+          <div class="tab-panel">
             <div class="results-header">
               <div>
                 <p class="section-label">Insights</p>
                 <h2>What the tender flow is telling us</h2>
                 <p class="panel-summary">
-                  Aggregated across every tender on record, open and closed.
+                  All time, across every tender on record — open, expired and archived.
                 </p>
               </div>
             </div>
@@ -468,8 +488,8 @@
                   <div>
                     <h3 id="insights-market-title">Who is buying</h3>
                     <p class="insights-block__note">
-                      Organisations ranked by tenders issued. A long bar we have no relationship with is a
-                      repeat buyer that has never heard of us.
+                      Ranked by tenders that clear the fit bar, not raw volume. Highlighted rows are
+                      repeat buyers of work we fit, with no relationship on record.
                     </p>
                   </div>
                   <div class="insights-toggle" role="group" aria-label="Filter organisations by relationship">
@@ -933,6 +953,6 @@
 
     <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
 
-    <script src="./app.js?v=20260730-1"></script>
+    <script src="./app.js?v=20260806-1"></script>
   </body>
 </html>

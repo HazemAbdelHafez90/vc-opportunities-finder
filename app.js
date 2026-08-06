@@ -57,7 +57,9 @@ const resultsTabCount = document.querySelector("#tab-results-count");
 const appliedTabCount = document.querySelector("#tab-applied-count");
 const missedTabCount = document.querySelector("#tab-missed-count");
 const resultsPanel = document.querySelector("#panel-results");
-const insightsTab = document.querySelector("#tab-insights");
+const deskViewButton = document.querySelector("#view-desk");
+const insightsViewButton = document.querySelector("#view-insights");
+const deskView = document.querySelector("#desk-view");
 const insightsPanel = document.querySelector("#panel-insights");
 const insightsStatus = document.querySelector("#insights-status");
 const insightsBody = document.querySelector("#insights-body");
@@ -178,6 +180,8 @@ let detailActionBusy = false;
 // The Insights tab aggregates the whole corpus, so it keeps its own dataset rather than
 // borrowing `allOpportunities`, which only ever holds the active tab's bucket.
 let insightsDataset = null;
+// Returning from Insights should land back on the desk tab you left, not reset to Live results.
+let lastDeskTab = "results";
 let insightsMarketFilter = "all";
 let insightsRequestId = 0;
 let expandedMarketGroupKey = null;
@@ -203,7 +207,8 @@ resultsTab.addEventListener("click", () => setActiveTab("results"));
 pendingTab.addEventListener("click", () => setActiveTab("pending"));
 appliedTab.addEventListener("click", () => setActiveTab("applied"));
 missedTab.addEventListener("click", () => setActiveTab("missed"));
-insightsTab.addEventListener("click", () => setActiveTab("insights"));
+deskViewButton.addEventListener("click", () => setActiveTab(lastDeskTab));
+insightsViewButton.addEventListener("click", () => setActiveTab("insights"));
 insightsMarketToggles.forEach((button) => {
   button.addEventListener("click", () => {
     insightsMarketFilter = button.dataset.marketFilter === "cold" ? "cold" : "all";
@@ -2785,20 +2790,31 @@ function setActiveTab(tab, options = {}) {
     syncTabUrl(currentOpportunityTab);
   }
 
+  const showingInsights = currentOpportunityTab === "insights";
+  if (!showingInsights) {
+    lastDeskTab = currentOpportunityTab;
+  }
+
   resultsTab.classList.toggle("active", currentOpportunityTab === "results");
   pendingTab.classList.toggle("active", currentOpportunityTab === "pending");
   appliedTab.classList.toggle("active", currentOpportunityTab === "applied");
   missedTab.classList.toggle("active", currentOpportunityTab === "missed");
-  insightsTab.classList.toggle("active", currentOpportunityTab === "insights");
 
   resultsTab.setAttribute("aria-selected", String(currentOpportunityTab === "results"));
   pendingTab.setAttribute("aria-selected", String(currentOpportunityTab === "pending"));
   appliedTab.setAttribute("aria-selected", String(currentOpportunityTab === "applied"));
   missedTab.setAttribute("aria-selected", String(currentOpportunityTab === "missed"));
-  insightsTab.setAttribute("aria-selected", String(currentOpportunityTab === "insights"));
 
-  const showingInsights = currentOpportunityTab === "insights";
-  resultsPanel.hidden = showingInsights;
+  deskViewButton.classList.toggle("is-active", !showingInsights);
+  insightsViewButton.classList.toggle("is-active", showingInsights);
+  deskViewButton.setAttribute("aria-selected", String(!showingInsights));
+  insightsViewButton.setAttribute("aria-selected", String(showingInsights));
+
+  // The desk's stats strip is scoped to the live bucket; the funnel is all-time. Showing both
+  // at once made the tool contradict itself (13 total vs 257 seen), so the whole desk view —
+  // strip, settings and results card — goes away on Insights rather than just the table.
+  deskView.hidden = showingInsights;
+  resultsPanel.hidden = false;
   insightsPanel.hidden = !showingInsights;
   currentTablePage = 1;
 
@@ -2966,8 +2982,12 @@ function renderFunnel(items) {
   insightsFunnel.innerHTML = funnel.steps
     .map((step, index) => {
       const previous = index === 0 ? null : funnel.steps[index - 1];
+      // The won/applied ratio is a win rate by another name — suppressed for the same reason
+      // buildFunnelReading refuses to print one.
       const conversion =
-        previous && previous.count > 0 ? Math.round((step.count / previous.count) * 100) : null;
+        step.key !== "won" && previous && previous.count > 0
+          ? Math.round((step.count / previous.count) * 100)
+          : null;
       // Width tracks the top of the funnel so the collapse is legible at a glance; the floor
       // keeps a single win from rendering as a zero-width sliver.
       const width = Math.max((step.count / total) * 100, step.count > 0 ? 1.5 : 0);
@@ -3000,20 +3020,19 @@ function renderFunnel(items) {
 function buildFunnelReading(funnel) {
   const parts = [];
 
+  // No win rate is printed anywhere, at any volume. `action_status` has no `lost` and no
+  // `awaiting outcome`, so a bid submitted last week is indistinguishable from one that lost.
+  // A percentage over that would assert something the data cannot support — it would read as
+  // "we lose everything" when most of the denominator may simply be undecided. Restore the
+  // rate only once outcomes are recorded properly.
   if (funnel.appliedCount === 0) {
     parts.push(
-      "Nothing is marked as Applied yet, so the funnel cannot tell you where the loss is. Start by recording bids as they go out."
-    );
-  } else if (funnel.appliedCount < 8) {
-    // A win rate off a handful of bids is arithmetic, not evidence. Say so rather than
-    // printing a percentage the team will quote back later as if it meant something.
-    parts.push(
-      `<strong>${funnel.wonCount} won from ${funnel.appliedCount} bids.</strong> That is too few bids to read a win rate from — the number worth moving is bids submitted, not conversion. ${funnel.qualifiedCount.toLocaleString()} tenders cleared the fit bar and ${(funnel.qualifiedCount - funnel.appliedCount).toLocaleString()} of them were never bid on.`
+      "Nothing is marked as Applied yet, so the funnel cannot tell you where the pipeline is losing. Start by recording bids as they go out."
     );
   } else {
-    const winRate = Math.round((funnel.wonCount / funnel.appliedCount) * 100);
+    const neverBid = funnel.qualifiedCount - funnel.appliedCount;
     parts.push(
-      `<strong>${funnel.wonCount} won from ${funnel.appliedCount} bids — a ${winRate}% win rate.</strong> ${funnel.qualifiedCount.toLocaleString()} tenders cleared the fit bar.`
+      `<strong>${funnel.appliedCount.toLocaleString()} bids submitted, ${funnel.wonCount.toLocaleString()} recorded as won.</strong> Outcomes are not tracked beyond Won, so the rest are a mix of lost and still undecided — no win rate is shown until that is separated. ${funnel.qualifiedCount.toLocaleString()} tenders cleared the fit bar and ${neverBid.toLocaleString()} of them were never bid on.`
     );
   }
 
@@ -3024,8 +3043,11 @@ function buildFunnelReading(funnel) {
   }
 
   if (funnel.medianLatencyDays !== null) {
+    const slow = funnel.medianLatencyDays >= 3;
     parts.push(
-      `Median time from a tender appearing to someone acting on it: <strong>${formatLatency(funnel.medianLatencyDays)}</strong>.`
+      `Median time from a tender appearing to someone acting on it: <strong>${formatLatency(funnel.medianLatencyDays)}</strong>.${
+        slow ? " Bids prepared that far into a tender's window are rarely competitive — latency and win rate are likely the same problem." : ""
+      }`
     );
   }
 
@@ -3064,6 +3086,7 @@ function buildMarketGroups(items) {
         warmthLabel: descriptor.label,
         countries: new Set(),
         bestFit: 0,
+        qualifiedCount: 0,
         latestSeen: null,
         items: [],
       };
@@ -3078,6 +3101,9 @@ function buildMarketGroups(items) {
 
     (item.countryList || []).forEach((country) => group.countries.add(country));
     group.bestFit = Math.max(group.bestFit, Number(item.fitScore) || 0);
+    if ((Number(item.fitScore) || 0) >= QUALIFIED_FIT_SCORE) {
+      group.qualifiedCount += 1;
+    }
 
     const seenAt = item.addedAt ? new Date(item.addedAt).getTime() : NaN;
     if (!Number.isNaN(seenAt) && (group.latestSeen === null || seenAt > group.latestSeen)) {
@@ -3087,9 +3113,22 @@ function buildMarketGroups(items) {
     group.items.push(item);
   });
 
+  // Rank on qualified tenders, not raw volume. UNDP posts ~65 notices, most of them marked
+  // not relevant — sorting on the raw count put the noisiest source on top and made the chart
+  // a measure of who publishes most rather than who buys visual work.
   return Array.from(groups.values()).sort(
-    (left, right) => right.items.length - left.items.length || right.bestFit - left.bestFit
+    (left, right) =>
+      right.qualifiedCount - left.qualifiedCount ||
+      right.items.length - left.items.length ||
+      right.bestFit - left.bestFit
   );
+}
+
+// Red is the app's action colour, so it goes only to rows worth acting on: repeat buyers of
+// work we actually fit, that we have no relationship with. Applied to every cold row it was
+// covering 22 of 25 bars and had stopped signalling anything.
+function isActionableGroup(group) {
+  return group.tone === "new" && group.qualifiedCount >= 2 && group.bestFit >= 70;
 }
 
 function renderMarketChart(items) {
@@ -3116,13 +3155,16 @@ function renderMarketChart(items) {
   }
 
   insightsMarketEmpty.hidden = true;
-  const maxCount = groups[0].items.length || 1;
+  // Bars are scaled by the qualified count they now rank on, so bar length and sort order
+  // tell the same story.
+  const maxCount = Math.max(...groups.map((group) => group.qualifiedCount), 1);
 
   insightsMarket.innerHTML = groups
     .map((group) => {
-      const count = group.items.length;
-      const width = Math.max((count / maxCount) * 100, 2);
+      const count = group.qualifiedCount;
+      const width = Math.max((count / maxCount) * 100, count > 0 ? 2 : 0);
       const isExpanded = expandedMarketGroupKey === group.key;
+      const actionable = isActionableGroup(group);
       const countries = Array.from(group.countries).filter(Boolean);
       const countryLabel =
         countries.length === 0
@@ -3132,7 +3174,9 @@ function renderMarketChart(items) {
             : `${countries.slice(0, 3).join(", ")} +${countries.length - 3}`;
 
       return `
-        <li class="market-row${isExpanded ? " is-expanded" : ""}" data-market-group="${escapeAttribute(group.key)}">
+        <li class="market-row${isExpanded ? " is-expanded" : ""}${
+          actionable ? " is-actionable" : ""
+        }" data-market-group="${escapeAttribute(group.key)}">
           <button class="market-row__button" type="button" aria-expanded="${isExpanded}">
             <span class="market-row__label">
               <span class="market-row__name">${escapeHtml(group.label)}</span>
@@ -3146,7 +3190,7 @@ function renderMarketChart(items) {
             <span class="market-row__count">${count}</span>
           </button>
           <p class="market-row__meta">
-            ${escapeHtml(countryLabel)} · best fit ${group.bestFit} · last seen ${escapeHtml(
+            ${escapeHtml(countryLabel)} · ${group.items.length} total · best fit ${group.bestFit} · last seen ${escapeHtml(
               group.latestSeen ? formatCompactDate(new Date(group.latestSeen).toISOString()) : "—"
             )}
           </p>

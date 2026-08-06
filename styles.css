@@ -2576,8 +2576,42 @@ html[data-theme="dark"] .theme-toggle__icon--moon {
    nothing else.
    ------------------------------------------------------------ */
 
-.tab-button--trailing {
-  margin-left: auto;
+/* Desk vs Insights is a view switch, not a filter. It sits above the desk's own metrics so
+   the two scopes never read as peers — the earlier placement inside the filter tab row made
+   Insights invisible and put all-time figures beside live-bucket ones. */
+.view-switch {
+  display: inline-flex;
+  margin-bottom: 18px;
+  border: 1px solid var(--colour-border-subtle);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+}
+
+.view-switch__button {
+  min-height: 44px;
+  padding: 0 20px;
+  border: 0;
+  background: transparent;
+  color: var(--colour-text-secondary);
+  font-family: inherit;
+  font-size: var(--font-size-sm);
+  cursor: pointer;
+  transition: background var(--motion-fast) var(--ease-out),
+    color var(--motion-fast) var(--ease-out);
+}
+
+.view-switch__button + .view-switch__button {
+  border-left: 1px solid var(--colour-border-subtle);
+}
+
+.view-switch__button:hover {
+  color: var(--colour-text-primary);
+}
+
+.view-switch__button.is-active {
+  background: var(--colour-background-brand-tint);
+  color: var(--colour-text-brand);
+  font-weight: var(--font-weight-bold);
 }
 
 .insights-status {
@@ -2619,11 +2653,13 @@ html[data-theme="dark"] .theme-toggle__icon--moon {
   line-height: 1.5;
 }
 
+/* The funnel reading is a warning condition, not an action affordance — qualified tenders
+   expiring untriaged is something gone wrong, so it takes the warning token rather than red. */
 .insights-callout {
   margin-top: 14px;
   padding: 12px 14px;
-  border-left: 2px solid var(--colour-border-brand);
-  background: var(--colour-background-surface);
+  border-left: 2px solid var(--colour-border-warning);
+  background: var(--colour-background-warning);
   color: var(--colour-text-secondary);
   font-size: var(--font-size-sm);
   line-height: 1.6;
@@ -2651,7 +2687,10 @@ html[data-theme="dark"] .theme-toggle__icon--moon {
 }
 
 .insights-toggle__button {
-  padding: 6px 12px;
+  /* 44px minimum touch target — this control is used on tablets alongside the desk. */
+  min-height: 44px;
+  min-width: 44px;
+  padding: 6px 14px;
   border: 0;
   background: transparent;
   color: var(--colour-text-secondary);
@@ -2717,10 +2756,14 @@ html[data-theme="dark"] .theme-toggle__icon--moon {
   background: var(--colour-border-strong);
 }
 
-/* Only the terminal step carries brand colour — it is the one number the funnel exists
-   to explain, and red is reserved for priority signals. */
+/* Won is a genuine success state, so it takes the success token rather than brand red.
+   Red is the action colour; a contract already awarded needs no action. */
 .funnel__step[data-step="won"] .funnel__bar {
-  background: var(--colour-background-brand);
+  background: var(--colour-status-success);
+}
+
+.funnel__step[data-step="won"] .funnel__value {
+  color: var(--colour-text-success);
 }
 
 .funnel__foot {
@@ -2809,24 +2852,41 @@ html[data-theme="dark"] .theme-toggle__icon--moon {
   height: 100%;
 }
 
-/* A relationship is a solid bar; no relationship is hatched. The hatch is what makes a long
-   cold bar readable at a glance — it is the row worth calling. */
+/* Warmth is an ordinal scale, so it reads as four steps of the warm neutral ramp — closest
+   relationship is lightest. No new hues: the design system has one brand colour and this is
+   not it. Red enters only via .is-actionable below. */
 .market-row__bar--client {
-  background: var(--colour-background-brand);
+  background: var(--colour-neutral-25);
 }
 
-.market-row__bar--family,
+.market-row__bar--family {
+  background: var(--colour-neutral-50);
+}
+
 .market-row__bar--network {
-  background: var(--colour-border-strong);
+  background: var(--colour-neutral-75);
 }
 
 .market-row__bar--new {
-  background: repeating-linear-gradient(
-    -45deg,
-    var(--colour-text-brand) 0 2px,
-    transparent 2px 5px
-  );
-  border: 1px solid var(--colour-border-brand);
+  background: var(--colour-neutral-100);
+}
+
+/* The only red in the chart. An actionable row is a repeat buyer of work we fit that has no
+   relationship on record — roughly four rows, not twenty-two. Red on every cold row made the
+   accent wallpaper and stopped it signalling anything. */
+.market-row.is-actionable .market-row__bar {
+  background: var(--colour-background-brand);
+}
+
+.market-row.is-actionable .market-row__name {
+  color: var(--colour-text-brand);
+}
+
+/* Colour is never the only indicator — the actionable rows carry a rule as well. */
+.market-row.is-actionable {
+  border-inline-start: 2px solid var(--colour-border-brand);
+  padding-inline-start: 10px;
+  margin-inline-start: -12px;
 }
 
 .market-row__count {
@@ -3117,8 +3177,13 @@ html[data-theme="dark"] .theme-toggle__icon--moon {
     grid-column: 2;
   }
 
-  .tab-button--trailing {
-    margin-left: 0;
+  .view-switch {
+    display: flex;
+    width: 100%;
+  }
+
+  .view-switch__button {
+    flex: 1;
   }
 }
 
