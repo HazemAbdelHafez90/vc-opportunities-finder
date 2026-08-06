@@ -2855,7 +2855,15 @@ function setActiveTab(tab, options = {}) {
    ============================================================ */
 
 const QUALIFIED_FIT_SCORE = 40; // matches the Medium threshold in getFitBadgeLabel
+// The funnel keeps the Medium bar because "79% of everything clears it" is itself the finding.
+// The buyer chart cannot: at 40+ the gate passes three quarters of the corpus (p25=40, p50=61),
+// so ranking on it reproduces raw volume. High fit is the threshold that actually separates.
+const HIGH_FIT_SCORE = 70;
 const MARKET_CHART_LIMIT = 25;
+// Cold organisations with at least this many high-fit tenders. Tuned against the live corpus:
+// >=1 gives 28 rows, >=2 gives 15, >=3 gives 6, >=5 gives 2. Six is a call list; fifteen is
+// wallpaper again.
+const ACTIONABLE_HIGH_FIT_COUNT = 3;
 
 function invalidateInsights() {
   insightsDataset = null;
@@ -3086,7 +3094,7 @@ function buildMarketGroups(items) {
         warmthLabel: descriptor.label,
         countries: new Set(),
         bestFit: 0,
-        qualifiedCount: 0,
+        highFitCount: 0,
         latestSeen: null,
         items: [],
       };
@@ -3100,9 +3108,10 @@ function buildMarketGroups(items) {
     }
 
     (item.countryList || []).forEach((country) => group.countries.add(country));
-    group.bestFit = Math.max(group.bestFit, Number(item.fitScore) || 0);
-    if ((Number(item.fitScore) || 0) >= QUALIFIED_FIT_SCORE) {
-      group.qualifiedCount += 1;
+    const fitScore = Number(item.fitScore) || 0;
+    group.bestFit = Math.max(group.bestFit, fitScore);
+    if (fitScore >= HIGH_FIT_SCORE) {
+      group.highFitCount += 1;
     }
 
     const seenAt = item.addedAt ? new Date(item.addedAt).getTime() : NaN;
@@ -3118,7 +3127,7 @@ function buildMarketGroups(items) {
   // a measure of who publishes most rather than who buys visual work.
   return Array.from(groups.values()).sort(
     (left, right) =>
-      right.qualifiedCount - left.qualifiedCount ||
+      right.highFitCount - left.highFitCount ||
       right.items.length - left.items.length ||
       right.bestFit - left.bestFit
   );
@@ -3128,7 +3137,7 @@ function buildMarketGroups(items) {
 // work we actually fit, that we have no relationship with. Applied to every cold row it was
 // covering 22 of 25 bars and had stopped signalling anything.
 function isActionableGroup(group) {
-  return group.tone === "new" && group.qualifiedCount >= 2 && group.bestFit >= 70;
+  return group.tone === "new" && group.highFitCount >= ACTIONABLE_HIGH_FIT_COUNT;
 }
 
 function renderMarketChart(items) {
@@ -3157,11 +3166,11 @@ function renderMarketChart(items) {
   insightsMarketEmpty.hidden = true;
   // Bars are scaled by the qualified count they now rank on, so bar length and sort order
   // tell the same story.
-  const maxCount = Math.max(...groups.map((group) => group.qualifiedCount), 1);
+  const maxCount = Math.max(...groups.map((group) => group.highFitCount), 1);
 
   insightsMarket.innerHTML = groups
     .map((group) => {
-      const count = group.qualifiedCount;
+      const count = group.highFitCount;
       const width = Math.max((count / maxCount) * 100, count > 0 ? 2 : 0);
       const isExpanded = expandedMarketGroupKey === group.key;
       const actionable = isActionableGroup(group);
