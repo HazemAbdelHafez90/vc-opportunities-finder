@@ -2608,10 +2608,13 @@ html[data-theme="dark"] .theme-toggle__icon--moon {
   color: var(--colour-text-primary);
 }
 
+/* Active state carries brand through the tint and the underline, not the label colour — brand
+   red as text is 3.09:1 on the light canvas. A border only has to clear 3:1 as a UI element. */
 .view-switch__button.is-active {
   background: var(--colour-background-brand-tint);
-  color: var(--colour-text-brand);
+  color: var(--colour-text-primary);
   font-weight: var(--font-weight-bold);
+  box-shadow: inset 0 -2px 0 var(--colour-border-brand);
 }
 
 .insights-status {
@@ -2660,7 +2663,8 @@ html[data-theme="dark"] .theme-toggle__icon--moon {
   padding: 12px 14px;
   border-left: 2px solid var(--colour-border-warning);
   background: var(--colour-background-warning);
-  color: var(--colour-text-secondary);
+  /* Primary, not secondary: over the warning tint the secondary token drops to 4.49:1. */
+  color: var(--colour-text-primary);
   font-size: var(--font-size-sm);
   line-height: 1.6;
 }
@@ -2878,8 +2882,12 @@ html[data-theme="dark"] .theme-toggle__icon--moon {
   background: var(--colour-background-brand);
 }
 
+/* The name stays at full-contrast primary rather than brand red: red text on the light canvas
+   measures 3.09:1 and fails AA for body copy. The bar and the rule already carry the signal,
+   so the colour is redundant here anyway. */
 .market-row.is-actionable .market-row__name {
-  color: var(--colour-text-brand);
+  color: var(--colour-text-primary);
+  font-weight: var(--font-weight-bold);
 }
 
 /* Colour is never the only indicator — the actionable rows carry a rule as well. */
