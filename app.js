@@ -1562,10 +1562,10 @@ function filterOpportunities(opportunities, filters) {
 
 function getFitFilterValue(opportunity) {
   const fitScore = Number(opportunity.fitScore) || 0;
-  if (fitScore >= 70) {
+  if (fitScore >= HIGH_FIT_SCORE) {
     return "high";
   }
-  if (fitScore >= 40) {
+  if (fitScore >= MEDIUM_FIT_SCORE) {
     return "medium";
   }
   return "low";
@@ -2253,10 +2253,10 @@ function getStatusTone(opportunity) {
 
 function getFitBadgeLabel(opportunity) {
   const fitScore = Number(opportunity.fitScore) || 0;
-  if (fitScore >= 70) {
+  if (fitScore >= HIGH_FIT_SCORE) {
     return "High";
   }
-  if (fitScore >= 40) {
+  if (fitScore >= MEDIUM_FIT_SCORE) {
     return "Medium";
   }
   return "Low";
@@ -2859,6 +2859,7 @@ const QUALIFIED_FIT_SCORE = 40; // matches the Medium threshold in getFitBadgeLa
 // The buyer chart cannot: at 40+ the gate passes three quarters of the corpus (p25=40, p50=61),
 // so ranking on it reproduces raw volume. High fit is the threshold that actually separates.
 const HIGH_FIT_SCORE = 70;
+const MEDIUM_FIT_SCORE = 40;
 const MARKET_CHART_LIMIT = 25;
 // Cold organisations with at least this many high-fit tenders. Tuned against the live corpus:
 // >=1 gives 28 rows, >=2 gives 15, >=3 gives 6, >=5 gives 2. Six is a call list; fifteen is
@@ -3617,11 +3618,11 @@ function safeCompare(left, right) {
 }
 
 function getFitTone(score) {
-  if (score >= 75) {
+  if (score >= HIGH_FIT_SCORE) {
     return "high";
   }
 
-  if (score >= 50) {
+  if (score >= MEDIUM_FIT_SCORE) {
     return "medium";
   }
 
@@ -3629,11 +3630,11 @@ function getFitTone(score) {
 }
 
 function getFitLabel(score) {
-  if (score >= 75) {
+  if (score >= HIGH_FIT_SCORE) {
     return "High fit";
   }
 
-  if (score >= 50) {
+  if (score >= MEDIUM_FIT_SCORE) {
     return "Medium fit";
   }
 

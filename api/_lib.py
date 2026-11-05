@@ -15,7 +15,7 @@ import xml.etree.ElementTree as ET
 
 from bs4 import BeautifulSoup
 
-from api.client_warmth import get_client_warmth
+from api.client_warmth import get_client_warmth, normalize_lookup_key
 from api.fairpicture_position import get_fairpicture_position
 
 try:
@@ -56,6 +56,8 @@ DEFAULT_KEYWORDS = [
     "content production",
     "visual storytelling",
 ]
+RELIEFWEB_OPPORTUNITY_TYPES = ["Tender/RFPs/EOIs", "Consultancy"]
+RELIEFWEB_RESULT_LIMIT = 50
 OPEN_STATUSES = {"open", "stale"}
 MANAGED_SOURCES = [
     "ReliefWeb",
@@ -2013,25 +2015,35 @@ def is_missing_sync_run_sources_table(exc: Exception) -> bool:
     return "sync_run_sources" in str(exc).lower()
 
 
-def fetch_reliefweb_jobs(appname: str, keywords: list[str]) -> list[dict]:
-    payload = {
-        "limit": 20,
+def build_reliefweb_query_value(keywords: list[str]) -> str:
+    return " ".join(f'"{keyword}"' if " " in keyword else keyword for keyword in keywords)
+
+
+def build_reliefweb_payload(keywords: list[str], limit: int = RELIEFWEB_RESULT_LIMIT) -> dict[str, Any]:
+    return {
+        "limit": limit,
         "offset": 0,
         "sort": ["date.closing:asc"],
         "query": {
-            "value": " ".join(keywords),
-            "fields": ["title"],
+            "value": build_reliefweb_query_value(keywords),
+            "fields": ["title", "body"],
             "operator": "OR",
         },
         "filter": {
-            "field": "status",
-            "value": ["published"],
-            "operator": "OR",
+            "operator": "AND",
+            "conditions": [
+                {"field": "status", "value": ["published"]},
+                {"field": "type.name", "value": RELIEFWEB_OPPORTUNITY_TYPES},
+            ],
         },
         "fields": {
             "include": ["title", "source", "url", "url_alias", "date.closing", "type", "country"],
         },
     }
+
+
+def fetch_reliefweb_jobs(appname: str, keywords: list[str]) -> list[dict]:
+    payload = build_reliefweb_payload(keywords)
     url = f"{RELIEFWEB_URL}?appname={parse.quote(appname)}"
     response = request_json(url, data=json.dumps(payload).encode("utf-8"))
     results = []
@@ -2060,7 +2072,7 @@ def fetch_reliefweb_jobs(appname: str, keywords: list[str]) -> list[dict]:
                     if country.get("shortname") or country.get("name")
                 ],
                 "deadline": deadline,
-                "type": ", ".join(entry.get("name") for entry in types if entry.get("name")) or "Job",
+                "type": ", ".join(entry.get("name") for entry in types if entry.get("name")) or "Tender",
                 "link": fields.get("url") or build_reliefweb_alias(fields.get("url_alias")),
                 "source": "ReliefWeb",
             }
@@ -2847,90 +2859,206 @@ def fetch_ungm_deadline_from_notice(link: str | None) -> str | None:
     return compact_space(match.group(1))
 
 
-def get_fit_analysis(opportunity: dict[str, Any]) -> dict[str, Any]:
-    title = String(opportunity.get("title", "")).lower()
-    organization = String(opportunity.get("organization", "")).lower()
-    notice_type = String(opportunity.get("type", "")).lower()
-    source = String(opportunity.get("source", "")).lower()
-    countries = " ".join(opportunity.get("countryList") or []).lower()
-    haystack = " ".join([title, organization, notice_type, source, countries])
+FIT_HIGH_SCORE = 70
+FIT_MEDIUM_SCORE = 40
+FIT_BASE_SCORE = 10
+FIT_VISUAL_WEIGHT = 32
+FIT_MEDIA_WEIGHT = 6
+FIT_VENDOR_WEIGHT = 26
+FIT_VENDOR_BOTH_BONUS = 8
+FIT_CLIENT_ORG_WEIGHT = 6
+FIT_INDIVIDUAL_PENALTY = 40
+FIT_HARDWARE_PENALTY = 45
+FIT_IT_PENALTY = 30
 
-    score = 15
+FIT_VISUAL_TERMS = [
+    "video",
+    "photo",
+    "animation",
+    "broadcast",
+    "tv",
+    "filmmaking",
+    "film making",
+    "photography",
+    "videography",
+    "videographer",
+    "photographer",
+    "video production",
+    "documentary",
+    "visual storytelling",
+    "photojournalism",
+    "multimedia",
+    "audio visual",
+    "audiovisual",
+    "audiovisuelle",
+    "film",
+    "filming",
+]
+FIT_MEDIA_TERMS = [
+    "storytelling",
+    "communications",
+    "creative",
+    "media",
+    "content production",
+    "editorial",
+    "visual content",
+    "digital storytelling",
+]
+FIT_PROCUREMENT_TERMS = [
+    "rfp",
+    "rfq",
+    "rfi",
+    "eoi",
+    "itb",
+    "itt",
+    "tender",
+    "quotation",
+    "framework",
+    "retainer",
+    "roster",
+    "lta",
+    "prequalification",
+    "solicitation",
+    "request for proposal",
+    "call for proposal",
+    "expression of interest",
+    "invitation to bid",
+    "terms of reference",
+]
+FIT_AGENCY_TERMS = [
+    "firm",
+    "agency",
+    "company",
+    "supplier",
+    "service provider",
+    "production house",
+    "production partner",
+    "contractor",
+    "vendor",
+]
+FIT_CLIENT_ORG_TERMS = [
+    "unicef",
+    "undp",
+    "who",
+    "un women",
+    "unfpa",
+    "iom",
+    "unhcr",
+    "wfp",
+    "fao",
+    "ilo",
+    "icimod",
+]
+FIT_INDIVIDUAL_TERMS = [
+    "individual consultant",
+    "national consultant",
+    "external collaborator",
+    "intern",
+    "internship",
+    "volunteer",
+    "assistant",
+    "officer",
+    "specialist",
+    "coordinator",
+    "manager",
+    "adviser",
+    "advisor",
+    "associate",
+    "trainee",
+    "stagiaire",
+    "focal point",
+    "fixed term",
+]
+FIT_HARDWARE_TERMS = [
+    "equipment",
+    "accessories",
+    "video conferencing",
+    "video conference",
+    "conferencing",
+    "installation",
+    "supply of",
+    "supply installation",
+    "projector",
+    "hardware",
+    "surveillance",
+    "photo camera",
+    "video camera",
+    "display system",
+    "video wall",
+    "smart board",
+    "commissioning",
+    "infrastructure",
+    "maintenance",
+]
+FIT_IT_TERMS = [
+    "content management system",
+    "cms",
+    "website",
+    "web portal",
+    "software",
+    "platform",
+    "hosting",
+    "database",
+    "erp",
+    "it system",
+    "information system",
+]
+
+
+def build_fit_haystack(opportunity: dict[str, Any]) -> str:
+    return normalize_lookup_key(
+        " ".join(
+            [
+                String(opportunity.get("title")),
+                String(opportunity.get("organization")),
+                String(opportunity.get("type")),
+                " ".join(opportunity.get("countryList") or []),
+            ]
+        )
+    )
+
+
+def matches_fit_term(haystack: str, term: str) -> bool:
+    return re.search(rf"(?<![a-z]){re.escape(term)}s?(?![a-z])", haystack) is not None
+
+
+def matches_any_fit_term(haystack: str, terms: list[str]) -> bool:
+    return any(matches_fit_term(haystack, term) for term in terms)
+
+
+def get_fit_analysis(opportunity: dict[str, Any]) -> dict[str, Any]:
+    haystack = build_fit_haystack(opportunity)
+
+    score = FIT_BASE_SCORE
     reasons = ["Base Fairpicture fit score"]
 
-    strong_terms = [
-        "photography",
-        "videography",
-        "videographer",
-        "photographer",
-        "video production",
-        "documentary",
-        "visual storytelling",
-        "photojournalism",
-        "multimedia",
-        "audio visual",
-        "audiovisual",
-        "film",
-        "filming",
-    ]
-    medium_terms = [
-        "storytelling",
-        "communications",
-        "creative",
-        "media",
-        "content production",
-        "editorial",
-        "visual content",
-        "digital storytelling",
-    ]
-    strong_org_terms = [
-        "unicef",
-        "undp",
-        "who",
-        "un women",
-        "unfpa",
-        "iom",
-        "unhcr",
-        "wfp",
-        "fao",
-        "ilo",
-        "icimod",
-    ]
-    service_terms = ["rfp", "rfq", "lta", "retainer", "framework", "tender"]
-    noisy_terms = [
-        "content management system",
-        "cms",
-        "website",
-        "web portal",
-        "software",
-        "platform",
-        "hosting",
-        "database",
-        "erp",
-        "it system",
-        "information system",
-    ]
-
-    if any(term in haystack for term in strong_terms):
-        score += 35
+    if matches_any_fit_term(haystack, FIT_VISUAL_TERMS):
+        score += FIT_VISUAL_WEIGHT
         reasons.append("Strong photography, videography, documentary, or multimedia keywords")
-    if any(term in haystack for term in medium_terms):
-        score += 12
+    if matches_any_fit_term(haystack, FIT_MEDIA_TERMS):
+        score += FIT_MEDIA_WEIGHT
         reasons.append("Related storytelling, communications, or media language")
-    if any(term in haystack for term in strong_org_terms):
-        score += 14
+    invites_proposals = matches_any_fit_term(haystack, FIT_PROCUREMENT_TERMS)
+    addresses_a_vendor = matches_any_fit_term(haystack, FIT_AGENCY_TERMS)
+    if invites_proposals:
+        reasons.append("Proposals, quotations, or a framework are invited")
+    if addresses_a_vendor:
+        reasons.append("Addressed to a firm, agency, or service provider")
+    if invites_proposals or addresses_a_vendor:
+        score += FIT_VENDOR_WEIGHT
+    if invites_proposals and addresses_a_vendor:
+        score += FIT_VENDOR_BOTH_BONUS
+    if matches_any_fit_term(haystack, FIT_CLIENT_ORG_TERMS):
+        score += FIT_CLIENT_ORG_WEIGHT
         reasons.append("Organization is a strong Fairpicture-fit client type")
-    if any(term in haystack for term in service_terms):
-        score += 14
-        reasons.append("Looks like a service tender, framework, or retainer")
-    if countries:
-        score += 5
-        reasons.append("Country or regional scope is specified")
-    if source.startswith("ungm") or source in {"undp procurement", "reliefweb"}:
-        score += 6
-        reasons.append("Source is one of the main procurement-focused channels")
-    if any(term in haystack for term in noisy_terms):
-        score -= 28
+    if matches_any_fit_term(haystack, FIT_INDIVIDUAL_TERMS):
+        score -= FIT_INDIVIDUAL_PENALTY
+        reasons.append("Penalty for an individual hire: staff post, internship, or named consultant")
+    if matches_any_fit_term(haystack, FIT_HARDWARE_TERMS):
+        score -= FIT_HARDWARE_PENALTY
+        reasons.append("Penalty for equipment supply or installation rather than production")
+    if matches_any_fit_term(haystack, FIT_IT_TERMS):
+        score -= FIT_IT_PENALTY
         reasons.append("Penalty for website, CMS, software, or IT-style tender language")
 
     normalized = max(0, min(100, score))
@@ -2946,9 +3074,9 @@ def String(value: Any) -> str:
 
 
 def get_fit_label(score: int) -> str:
-    if score >= 75:
+    if score >= FIT_HIGH_SCORE:
         return "High fit"
-    if score >= 50:
+    if score >= FIT_MEDIUM_SCORE:
         return "Medium fit"
     return "Low fit"
 
