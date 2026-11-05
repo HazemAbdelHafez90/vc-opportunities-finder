@@ -27,6 +27,8 @@ except ImportError:  # pragma: no cover
 UNDP_RSS_URL = "https://procurement-notices.undp.org/rss_feeds/rss.xml"
 RELIEFWEB_URL = "https://api.reliefweb.int/v2/jobs"
 UNGM_SEARCH_URL = "https://www.ungm.org/Public/Notice/Search"
+UNGM_NOTICE_PAGE_URL = "https://www.ungm.org/Public/Notice"
+UNGM_ANTIFORGERY_COOKIE = "__RequestVerificationToken"
 ICIMOD_POSTS_URL = "https://www.icimod.org/wp-json/wp/v2/posts"
 WELTHUNGERHILFE_TENDERS_URL = "https://www.welthungerhilfe.org/tenders"
 SAVE_THE_CHILDREN_TENDERS_URL = "https://www.savethechildren.net/tenders"
@@ -429,11 +431,12 @@ def request_json(url: str, data: bytes | None = None, headers: dict[str, str] | 
         raise RuntimeError(message) from exc
 
 
-def request_text(url: str, data: bytes | None = None) -> str:
-    headers = dict(DEFAULT_HEADERS)
+def request_text(url: str, data: bytes | None = None, headers: dict[str, str] | None = None) -> str:
+    merged_headers = dict(DEFAULT_HEADERS)
     if data is not None:
-        headers["Content-Type"] = "application/json"
-    req = request.Request(url, data=data, headers=headers, method="POST" if data else "GET")
+        merged_headers["Content-Type"] = "application/json"
+    merged_headers.update(headers or {})
+    req = request.Request(url, data=data, headers=merged_headers, method="POST" if data else "GET")
 
     try:
         with request.urlopen(req, timeout=30, context=SSL_CONTEXT) as response:
@@ -2122,8 +2125,55 @@ def fetch_undp_procurement(keywords: list[str]) -> list[dict]:
     return items
 
 
+UNGM_TOKEN_FIELD_PATTERNS = [
+    re.compile(
+        rf'name="{UNGM_ANTIFORGERY_COOKIE}"[^>]*?value="([^"]+)"',
+        re.IGNORECASE,
+    ),
+    re.compile(
+        rf'value="([^"]+)"[^>]*?name="{UNGM_ANTIFORGERY_COOKIE}"',
+        re.IGNORECASE,
+    ),
+]
+
+
+def extract_ungm_verification_headers(html: str, set_cookie_values: list[str]) -> dict[str, str]:
+    token = ""
+    for pattern in UNGM_TOKEN_FIELD_PATTERNS:
+        match = pattern.search(html or "")
+        if match:
+            token = match.group(1).strip()
+            break
+    if not token:
+        raise RuntimeError("UNGM did not return an antiforgery token.")
+
+    cookies = [
+        value.split(";", 1)[0].strip()
+        for value in set_cookie_values
+        if value.split("=", 1)[0].strip() == UNGM_ANTIFORGERY_COOKIE
+    ]
+    if not cookies:
+        raise RuntimeError("UNGM did not set an antiforgery cookie.")
+
+    return {
+        "RequestVerificationToken": token,
+        "Cookie": "; ".join(cookies),
+        "X-Requested-With": "XMLHttpRequest",
+    }
+
+
+def fetch_ungm_verification_headers() -> dict[str, str]:
+    req = request.Request(UNGM_NOTICE_PAGE_URL, headers=dict(DEFAULT_HEADERS))
+    with request.urlopen(req, timeout=30, context=SSL_CONTEXT) as response:
+        html = response.read().decode("utf-8", errors="replace")
+        set_cookie_values = response.headers.get_all("Set-Cookie") or []
+
+    return extract_ungm_verification_headers(html, list(set_cookie_values))
+
+
 def fetch_ungm_notices(keywords: list[str]) -> list[dict]:
     search_terms = list(dict.fromkeys(keywords[:5] or ["video"]))
+    verification_headers = fetch_ungm_verification_headers()
     deduped = {}
 
     for term in search_terms:
@@ -2150,7 +2200,11 @@ def fetch_ungm_notices(keywords: list[str]) -> list[dict]:
             "NoticeSearchTotalLabelId": "noticeSearchTotal",
             "TypeOfCompetitions": [],
         }
-        html = request_text(UNGM_SEARCH_URL, data=json.dumps(payload).encode("utf-8"))
+        html = request_text(
+            UNGM_SEARCH_URL,
+            data=json.dumps(payload).encode("utf-8"),
+            headers=verification_headers,
+        )
         soup = BeautifulSoup(html, "html.parser")
 
         for row in soup.select("div.tableRow.dataRow.notice-table"):
@@ -2192,7 +2246,11 @@ def fetch_ungm_agency_notices(
         "NoticeSearchTotalLabelId": "noticeSearchTotal",
         "TypeOfCompetitions": [],
     }
-    html = request_text(UNGM_SEARCH_URL, data=json.dumps(payload).encode("utf-8"))
+    html = request_text(
+        UNGM_SEARCH_URL,
+        data=json.dumps(payload).encode("utf-8"),
+        headers=fetch_ungm_verification_headers(),
+    )
     if is_ungm_error_page(html):
         raise RuntimeError(f"UNGM returned an internal error page for agency filter: {agency}")
     soup = BeautifulSoup(html, "html.parser")
@@ -2987,8 +3045,18 @@ FIT_HARDWARE_TERMS = [
     "video wall",
     "smart board",
     "commissioning",
-    "infrastructure",
     "maintenance",
+    "smart tv",
+    "equipo",
+    "equipos",
+    "equipement",
+    "materiel",
+    "fourniture",
+    "suministro",
+    "sonorisation",
+    "visioconference",
+    "videovigilancia",
+    "instalacion",
 ]
 FIT_IT_TERMS = [
     "content management system",
