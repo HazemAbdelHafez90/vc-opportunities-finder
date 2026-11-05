@@ -79,6 +79,21 @@ class FitScoreTests(unittest.TestCase):
         self.assertLess(score("Video Conferencing equipment and Infrastructure upgrade"), FIT_HIGH_SCORE)
         self.assertLess(score("Procurement of Video/Photo Camera FAO Office in Tajikistan"), FIT_HIGH_SCORE)
 
+    def test_infrastructure_as_a_video_subject_is_not_an_equipment_purchase(self):
+        result = get_fit_analysis(
+            opportunity(
+                "RFQ - Production of Documentary-Style Video Profiles for projects working on infrastructure",
+                "ILO",
+            )
+        )
+
+        self.assertGreaterEqual(result["score"], FIT_HIGH_SCORE)
+
+    def test_equipment_supply_is_caught_in_spanish_and_french(self):
+        self.assertLess(score("Equipo audiovisual (Smart TV, soporte movil, sistema de sonido)", organization="FAO"), FIT_HIGH_SCORE)
+        self.assertLess(score("Fourniture et installation de kits de sonorisation et de visioconference", organization="FAO"), FIT_HIGH_SCORE)
+        self.assertLess(score("Puesta en valor del sistema de videovigilancia", organization="UNDP"), FIT_HIGH_SCORE)
+
     def test_a_consultancy_firm_outranks_an_individual_consultant(self):
         firm = score("National Consultancy Firm to produce a video on the UN", organization="UNDP")
         individual = score("Individual Consultant - Multimedia consultant", organization="UNDP")
