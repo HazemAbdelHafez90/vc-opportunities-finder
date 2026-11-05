@@ -56,6 +56,8 @@ DEFAULT_KEYWORDS = [
     "content production",
     "visual storytelling",
 ]
+RELIEFWEB_OPPORTUNITY_TYPES = ["Tender/RFPs/EOIs", "Consultancy"]
+RELIEFWEB_RESULT_LIMIT = 50
 OPEN_STATUSES = {"open", "stale"}
 MANAGED_SOURCES = [
     "ReliefWeb",
@@ -2013,25 +2015,35 @@ def is_missing_sync_run_sources_table(exc: Exception) -> bool:
     return "sync_run_sources" in str(exc).lower()
 
 
-def fetch_reliefweb_jobs(appname: str, keywords: list[str]) -> list[dict]:
-    payload = {
-        "limit": 20,
+def build_reliefweb_query_value(keywords: list[str]) -> str:
+    return " ".join(f'"{keyword}"' if " " in keyword else keyword for keyword in keywords)
+
+
+def build_reliefweb_payload(keywords: list[str], limit: int = RELIEFWEB_RESULT_LIMIT) -> dict[str, Any]:
+    return {
+        "limit": limit,
         "offset": 0,
         "sort": ["date.closing:asc"],
         "query": {
-            "value": " ".join(keywords),
-            "fields": ["title"],
+            "value": build_reliefweb_query_value(keywords),
+            "fields": ["title", "body"],
             "operator": "OR",
         },
         "filter": {
-            "field": "status",
-            "value": ["published"],
-            "operator": "OR",
+            "operator": "AND",
+            "conditions": [
+                {"field": "status", "value": ["published"]},
+                {"field": "type.name", "value": RELIEFWEB_OPPORTUNITY_TYPES},
+            ],
         },
         "fields": {
             "include": ["title", "source", "url", "url_alias", "date.closing", "type", "country"],
         },
     }
+
+
+def fetch_reliefweb_jobs(appname: str, keywords: list[str]) -> list[dict]:
+    payload = build_reliefweb_payload(keywords)
     url = f"{RELIEFWEB_URL}?appname={parse.quote(appname)}"
     response = request_json(url, data=json.dumps(payload).encode("utf-8"))
     results = []
@@ -2060,7 +2072,7 @@ def fetch_reliefweb_jobs(appname: str, keywords: list[str]) -> list[dict]:
                     if country.get("shortname") or country.get("name")
                 ],
                 "deadline": deadline,
-                "type": ", ".join(entry.get("name") for entry in types if entry.get("name")) or "Job",
+                "type": ", ".join(entry.get("name") for entry in types if entry.get("name")) or "Tender",
                 "link": fields.get("url") or build_reliefweb_alias(fields.get("url_alias")),
                 "source": "ReliefWeb",
             }
