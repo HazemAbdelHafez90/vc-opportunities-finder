@@ -1,4 +1,12 @@
 {
+  "functions": {
+    "api/cron-refresh.py": {
+      "maxDuration": 300
+    },
+    "api/refresh.py": {
+      "maxDuration": 300
+    }
+  },
   "crons": [
     {
       "path": "/api/cron-refresh",
