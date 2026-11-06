@@ -143,7 +143,7 @@ class QuietSourceTests(unittest.TestCase):
 class QualityDropTests(unittest.TestCase):
     def test_mostly_missing_deadlines_is_an_incident(self):
         result = evaluate_source(
-            current=run(rowsParsed=10, rowsMissingDeadline=6),
+            current=run(rowsParsed=40, rowsMatched=10, rowsMissingDeadline=6),
             history=history(30),
             new_row_days=[date(2026, 11, 6)],
             today=date(2026, 11, 6),
@@ -152,7 +152,7 @@ class QualityDropTests(unittest.TestCase):
 
     def test_mostly_boilerplate_titles_is_an_incident(self):
         result = evaluate_source(
-            current=run(rowsParsed=10, rowsSuspiciousTitle=4),
+            current=run(rowsParsed=40, rowsMatched=10, rowsSuspiciousTitle=4),
             history=history(30),
             new_row_days=[date(2026, 11, 6)],
             today=date(2026, 11, 6),
@@ -161,12 +161,46 @@ class QualityDropTests(unittest.TestCase):
 
     def test_a_few_bad_rows_are_tolerated(self):
         result = evaluate_source(
-            current=run(rowsParsed=10, rowsMissingDeadline=2, rowsSuspiciousTitle=1),
+            current=run(rowsParsed=40, rowsMatched=20, rowsMissingDeadline=2,
+                        rowsSuspiciousTitle=1),
             history=history(30),
             new_row_days=[date(2026, 11, 6)],
             today=date(2026, 11, 6),
         )
         self.assertEqual(result["state"], STATE_HEALTHY)
+
+    def test_the_ratio_is_taken_over_kept_rows_not_parsed_rows(self):
+        """UNDP parses 535 notices and keeps 6. Against the parsed count a 30%
+        threshold needs 161 bad rows, which 6 rows can never reach, so the rule
+        could never fire on that source at all."""
+        result = evaluate_source(
+            current=run(rowsParsed=535, rowsMatched=6, rowsMissingDeadline=3),
+            history=history(30),
+            new_row_days=[date(2026, 11, 6)],
+            today=date(2026, 11, 6),
+        )
+        self.assertEqual(result["rule"], RULE_QUALITY_DROP)
+        self.assertIn("6 kept rows", result["detail"])
+
+    def test_a_sample_too_small_to_judge_abstains(self):
+        """ICIMOD keeps one row. One missing deadline is 100% of it, which says
+        nothing about whether the source is healthy."""
+        result = evaluate_source(
+            current=run(rowsParsed=17, rowsMatched=1, rowsMissingDeadline=1),
+            history=history(30),
+            new_row_days=[date(2026, 11, 6)],
+            today=date(2026, 11, 6),
+        )
+        self.assertNotEqual(result.get("rule"), RULE_QUALITY_DROP)
+
+    def test_a_source_that_keeps_nothing_is_not_a_quality_failure(self):
+        result = evaluate_source(
+            current=run(rowsParsed=23, rowsMatched=0, rowsMissingDeadline=0),
+            history=history(30, rowsParsed=23, rowsMatched=0),
+            new_row_days=[date(2026, 11, 6)],
+            today=date(2026, 11, 6),
+        )
+        self.assertNotEqual(result.get("rule"), RULE_QUALITY_DROP)
 
     def test_the_ungm_boilerplate_sentence_counts_as_a_broken_title(self):
         self.assertTrue(
