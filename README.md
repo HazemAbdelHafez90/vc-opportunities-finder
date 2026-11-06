@@ -9,6 +9,8 @@ Internal Fairpicture tool for discovering media-related opportunities from:
 - Welthungerhilfe
 - Plan International
 - CAF (Confédération Africaine de Football)
+- TED (Tenders Electronic Daily, the EU procurement gazette)
+- Find a Tender (UK public contracts)
 
 The app now uses Supabase as its cache and read layer:
 
@@ -225,9 +227,15 @@ tenders at a time and only occasionally a media one. Those carry a committed
 default in `SPARSE_SOURCE_QUIET_BUSINESS_DAYS` (Welthungerhilfe, Plan International
 and CAF, at 90 business days) so they do not open an incident within days of being
 switched on. A value in `source_quiet_overrides` still wins over it. For these the
-`hard_fail` rule does the real watching, which is why both new fetchers carry a
-probe: without one a run row reports `rowsParsed` as the matched count, and a page
-that silently stopped yielding tenders would look the same as a quiet week.
+`hard_fail` rule does the real watching, which is why Plan International and CAF
+both carry a probe: without one a run row reports `rowsParsed` as the matched
+count, and a page that silently stopped yielding tenders would look the same as a
+quiet week.
+
+TED and Find a Tender deliberately do **not** carry an entry there. They are
+gazettes rather than one organisation's tender page — between them they cover every
+EU and UK public contract, and they match most days — so a quiet week is a broken
+fetcher, and the normal floor is the right thing to judge them on.
 
 ### Retiring a source
 
@@ -255,6 +263,67 @@ expected to match nothing most weeks:
   insurance. The value is forward-looking: catching the next one on the day it is
   posted. 2.5s per run, and its index links to tenders it has already deleted, which
   is why a 404 on a detail page is skipped rather than failing the source.
+
+### TED and Find a Tender
+
+Added 6 November 2026. These two are gazettes, not one organisation's tender page:
+TED carries every public procurement notice in the EU, Find a Tender every UK
+public contract. Neither is in `SPARSE_SOURCE_QUIET_BUSINESS_DAYS` — see above.
+
+**TED** is queried through the Search API (`POST /v3/notices/search`, no key).
+Three things in that query are load-bearing:
+
+- `scope` defaults to `ALL`, which searches every notice TED has ever carried and
+  answers with rows from two years ago. `ACTIVE` is set explicitly.
+- The narrowing is done by CPV classification, not by keyword, because TED matches
+  a parent code against its whole branch: asking for 92111000 also returns
+  92111100, 92111200 and the rest. A title-keyword clause was tried alongside it
+  and removed — it added **zero** rows at 14, 60 and 180 days, because TED's
+  translated titles embed the CPV description, so anything the keywords would catch
+  the classification already caught.
+- `notice-type` is limited to the types that are a live call for bids. Of the 863
+  active notices in these CPV codes, every `can-*`, `veat`, `pin-only`, `pin-rtl`
+  and `pin-buyer` notice had **no submission deadline at all**, so any that slipped
+  through would sit in the table open forever.
+
+Titles come back as a map over all 24 official languages, and the English one is
+written `"Country – CPV description – native title"`. The country is taken from
+that prefix, which is where the country names in these rows come from; if the
+prefix is missing it falls back to the ISO country codes, ignoring the NUTS region
+codes that `place-of-performance` mixes in with them.
+
+**Find a Tender** is read from the OCDS release endpoint
+(`GET /api/1.0/ocdsReleasePackages`, no key). Its `stages` parameter looks like
+exactly the filter this needs and **must not be used**: `stages=tender` returns
+only the notices whose legal basis is the old EU directive (32014L0024) and
+silently drops every notice published under the Procurement Act 2023 — 5 releases
+where an unfiltered sweep of the same day found 54. `stages=planning,tender`
+returns nothing at all. So the 24-hour window is swept whole and filtered here.
+
+That sweep is the expensive part of the source: a normal day is about 430 releases
+over 5 pages and ~5 MB, because `limit` caps at 100. Of those 430, around 290 are
+award and contract releases — one ocid accumulates releases over its life, and only
+the open stages (`tender`, `tenderUpdate`, `planning`, `planningUpdate`) are
+something to bid on. A planning release has no tender period, so its deadline comes
+from the engagement milestone instead. If this ever needs to be cheaper, the lever
+is `FIND_A_TENDER_WINDOW_HOURS`.
+
+The service allows 12 requests before answering `Rate limit of 12 exceeded`, which
+is why the page cap is 8 rather than something generous, and why a refusal part way
+through keeps the pages already read instead of discarding them and reporting an
+outage. A failure on the very first page is still a failed source. Either way the
+probe keeps the HTTP status, so a run that was cut short shows the 429 that cut it
+rather than passing for a slightly thinner day.
+
+One consequence to expect in the health strip: a sweep spends 5 of those 12
+requests, so pressing `Refresh Results` within about two minutes of another run
+will fail Find a Tender with a 429 while every other source succeeds. That is the
+rate limit, not an outage, and it clears on the next run.
+
+Measured on 6 November 2026: **TED 0.5–1.3s** (31 notices fetched, 31 parsed, 9
+matched) and **Find a Tender 5.5–12.9s, typically ~7s** (424–430 releases fetched,
+124–126 parsed, 3 matched). Together they add roughly 8 seconds to a sync that was
+about 45 seconds, nearly all of it Find a Tender's unavoidable sweep.
 
 ### Alerts
 

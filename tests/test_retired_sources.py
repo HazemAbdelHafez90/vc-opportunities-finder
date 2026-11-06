@@ -54,6 +54,8 @@ class RetiredSourceTests(unittest.TestCase):
             ("fetch_reliefweb_jobs", "ReliefWeb"),
             ("fetch_plan_international_tenders", "Plan International"),
             ("fetch_caf_tenders", "CAF"),
+            ("fetch_ted_notices", "TED"),
+            ("fetch_find_a_tender_notices", "Find a Tender"),
         )
         original = {attr: getattr(_lib, attr) for attr, _ in fetchers}
         for attr, label in fetchers:
