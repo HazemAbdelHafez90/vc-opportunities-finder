@@ -11,8 +11,21 @@ class handler(BaseHTTPRequestHandler):
         try:
             get_authenticated_user(self.headers)
             sync = serialize_sync_run(get_latest_sync_run())
+            # The health strip reads this. A missing source_runs table must not take
+            # the whole status route down, so it degrades to an empty list.
+            try:
+                from api.source_monitor import get_source_health_overview
+
+                health = get_source_health_overview()
+            except Exception as exc:  # pragma: no cover - monitoring must not break status
+                print(f"[health] overview unavailable: {exc}")
+                health = []
             self.write_json(
-                {"sync": sync, "sources": sync.get("sourceResults") or []},
+                {
+                    "sync": sync,
+                    "sources": sync.get("sourceResults") or [],
+                    "sourceHealth": health,
+                },
                 cache_control="no-store",
             )
         except AuthError as exc:

@@ -23,7 +23,7 @@
       crossorigin
     />
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-    <link rel="stylesheet" href="./styles.css?v=20261106" />
+    <link rel="stylesheet" href="./styles.css?v=20261106b" />
     <script>
       (function() {
         try {
@@ -150,6 +150,9 @@
             </p>
           </div>
           <span class="workspace-badge">Internal</span>
+          <!-- One dot per source: green healthy, amber open incident, red failing,
+               grey not enough history to judge. -->
+          <div class="source-strip" id="source-strip" role="status" aria-label="Source health" hidden></div>
           <strong id="result-count" hidden>0 items</strong>
         </div>
         <div class="app-bar__actions">
@@ -953,6 +956,6 @@
 
     <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
 
-    <script src="./app.js?v=20261106"></script>
+    <script src="./app.js?v=20261106b"></script>
   </body>
 </html>

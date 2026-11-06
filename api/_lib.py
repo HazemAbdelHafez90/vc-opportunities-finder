@@ -4,6 +4,7 @@ import base64
 import binascii
 import hashlib
 import hmac
+import inspect
 import json
 import os
 import re
@@ -431,7 +432,55 @@ def request_json(url: str, data: bytes | None = None, headers: dict[str, str] | 
         raise RuntimeError(message) from exc
 
 
-def request_text(url: str, data: bytes | None = None, headers: dict[str, str] | None = None) -> str:
+class SourceProbe:
+    """Collects what a fetcher saw, so a run row can tell a broken page apart from
+    a working one with nothing to offer.
+
+    Counts accumulate, because several fetchers make one request per search term.
+    `rows_fetched` is what the source handed back, `rows_parsed` is what survived
+    parsing -- both counted before any keyword or deadline filtering, which is the
+    whole point: filtering to zero is normal, parsing to zero is not.
+    """
+
+    def __init__(self) -> None:
+        self.rows_fetched = 0
+        self.rows_parsed = 0
+        self.http_status: int | None = None
+        self.control_reported_total: int | None = None
+        self.control_expected_rows: int | None = None
+        self.saw_counts = False
+
+    def record(
+        self,
+        *,
+        fetched: int | None = None,
+        parsed: int | None = None,
+        http_status: int | None = None,
+        reported_total: int | None = None,
+        expected_rows: int | None = None,
+    ) -> None:
+        if fetched is not None:
+            self.rows_fetched += int(fetched)
+            self.saw_counts = True
+        if parsed is not None:
+            self.rows_parsed += int(parsed)
+            self.saw_counts = True
+        if http_status is not None:
+            # The worst status across the calls is the one worth reporting.
+            if self.http_status is None or int(http_status) > self.http_status:
+                self.http_status = int(http_status)
+        if reported_total is not None:
+            self.control_reported_total = (self.control_reported_total or 0) + int(reported_total)
+        if expected_rows is not None:
+            self.control_expected_rows = (self.control_expected_rows or 0) + int(expected_rows)
+
+
+def request_text(
+    url: str,
+    data: bytes | None = None,
+    headers: dict[str, str] | None = None,
+    probe: "SourceProbe | None" = None,
+) -> str:
     merged_headers = dict(DEFAULT_HEADERS)
     if data is not None:
         merged_headers["Content-Type"] = "application/json"
@@ -440,8 +489,12 @@ def request_text(url: str, data: bytes | None = None, headers: dict[str, str] | 
 
     try:
         with request.urlopen(req, timeout=30, context=SSL_CONTEXT) as response:
+            if probe is not None:
+                probe.record(http_status=getattr(response, "status", None) or response.getcode())
             return response.read().decode("utf-8", errors="replace")
     except error.HTTPError as exc:
+        if probe is not None:
+            probe.record(http_status=exc.code)
         body = exc.read().decode("utf-8", errors="replace")
         raise RuntimeError(body or f"HTTP {exc.code}") from exc
 
@@ -879,6 +932,15 @@ def run_refresh_sync(*, triggered_by: str = "manual") -> dict[str, Any]:
 
         replace_sync_run_source_rows(sync_run["id"], source_results)
 
+        # How many of this run's new rows each source contributed. The quiet-source
+        # rule reads this, so it has to be per source rather than the run total.
+        new_rows_by_source: dict[str, int] = {}
+        for row in new_rows:
+            key = row.get("source") or "Unknown source"
+            new_rows_by_source[key] = new_rows_by_source.get(key, 0) + 1
+        for result in source_results:
+            result["rowsNew"] = new_rows_by_source.get(result.get("source"), 0)
+
         failed_sources = [result for result in source_results if result.get("status") == "failed"]
         completed_sources = [result for result in source_results if result.get("status") == "completed"]
         overall_status = "failed" if failed_sources and not completed_sources else "completed"
@@ -889,6 +951,19 @@ def run_refresh_sync(*, triggered_by: str = "manual") -> dict[str, Any]:
             )
             or None
         )
+
+        # Health is judged after the run is otherwise complete, so a problem in the
+        # monitoring can never fail a sync that actually worked.
+        health_summary: dict[str, Any] = {"evaluated": 0, "skippedReason": None}
+        try:
+            from api.source_monitor import evaluate_sources_after_run
+
+            health_summary = evaluate_sources_after_run(
+                sync_run["id"], source_results, now_iso
+            )
+        except Exception as exc:
+            health_summary = {"evaluated": 0, "skippedReason": compact_space(str(exc))}
+            print(f"[health] evaluation failed: {exc}")
 
         finished = update_sync_run(
             sync_run["id"],
@@ -901,6 +976,14 @@ def run_refresh_sync(*, triggered_by: str = "manual") -> dict[str, Any]:
             },
         )
 
+        heartbeat = {"configured": False, "pinged": False}
+        try:
+            from api.source_monitor import ping_heartbeat
+
+            heartbeat = ping_heartbeat(overall_status == "completed" and not failed_sources)
+        except Exception as exc:
+            print(f"[heartbeat] skipped: {exc}")
+
         return {
             "items": get_managed_opportunities_from_db(),
             "sync": serialize_sync_run(finished),
@@ -908,6 +991,8 @@ def run_refresh_sync(*, triggered_by: str = "manual") -> dict[str, Any]:
             "updatedCount": updated_count,
             "sources": source_results,
             "notifications": notification_summary,
+            "health": health_summary,
+            "heartbeat": heartbeat,
         }
     except Exception as exc:
         if source_results:
@@ -1970,23 +2055,46 @@ def fetch_live_items(appname: str, keywords: list[str]) -> tuple[list[dict[str, 
 
 
 def fetch_source_safely(source_name: str, fetcher, *args, **kwargs) -> dict[str, Any]:
+    from api.source_health import summarize_item_quality
+
+    probe = SourceProbe()
+    started_at = datetime.now(timezone.utc)
+
+    # Decided from the signature rather than by catching TypeError: a TypeError
+    # raised inside a fetcher must stay a failed source, not escape and take the
+    # whole sync down with it.
+    accepts_probe = "probe" in inspect.signature(fetcher).parameters
+    if accepts_probe:
+        kwargs = {**kwargs, "probe": probe}
+
     try:
-        items = fetcher(*args, **kwargs) or []
-        return {
-            **build_source_result(source_name, status="completed", item_count=len(items), error_message=None),
-            "items": items,
-        }
+        items, status, error_message = fetcher(*args, **kwargs) or [], "completed", None
     except Exception as exc:
         print(f"[refresh] Source fetch failed for {source_name}: {exc}")
-        return {
-            **build_source_result(
-                source_name,
-                status="failed",
-                item_count=0,
-                error_message=summarize_source_error(exc),
-            ),
-            "items": [],
-        }
+        items, status, error_message = [], "failed", summarize_source_error(exc)
+
+    quality = summarize_item_quality(items)
+    return {
+        **build_source_result(
+            source_name,
+            status=status,
+            item_count=len(items),
+            error_message=error_message,
+        ),
+        "startedAt": started_at.isoformat(),
+        "durationMs": int((datetime.now(timezone.utc) - started_at).total_seconds() * 1000),
+        "httpStatus": probe.http_status,
+        # Without a probe the only count we have is what came back after filtering.
+        "rowsFetched": probe.rows_fetched if probe.saw_counts else len(items),
+        "rowsParsed": probe.rows_parsed if probe.saw_counts else len(items),
+        "rowsMatched": len(items),
+        "rowsNew": 0,
+        "rowsMissingDeadline": quality["rowsMissingDeadline"],
+        "rowsSuspiciousTitle": quality["rowsSuspiciousTitle"],
+        "controlReportedTotal": probe.control_reported_total,
+        "controlExpectedRows": probe.control_expected_rows,
+        "items": items,
+    }
 
 
 def build_source_result(
@@ -2045,13 +2153,20 @@ def build_reliefweb_payload(keywords: list[str], limit: int = RELIEFWEB_RESULT_L
     }
 
 
-def fetch_reliefweb_jobs(appname: str, keywords: list[str]) -> list[dict]:
+def fetch_reliefweb_jobs(appname: str, keywords: list[str], probe: SourceProbe | None = None) -> list[dict]:
     payload = build_reliefweb_payload(keywords)
     url = f"{RELIEFWEB_URL}?appname={parse.quote(appname)}"
     response = request_json(url, data=json.dumps(payload).encode("utf-8"))
+    entries = response.get("data", []) or []
+    if probe is not None:
+        probe.record(
+            fetched=len(entries),
+            parsed=sum(1 for entry in entries if (entry.get("fields") or {}).get("title")),
+            http_status=200,
+        )
     results = []
 
-    for item in response.get("data", []):
+    for item in entries:
         fields = item.get("fields", {})
         deadline = fields.get("date", {}).get("closing") or fields.get("date.closing")
         if not is_open_deadline(deadline):
@@ -2117,9 +2232,11 @@ def derive_undp_notice_type(title: str) -> str:
     return UNDP_DEFAULT_NOTICE_TYPE
 
 
-def fetch_undp_procurement(keywords: list[str]) -> list[dict]:
+def fetch_undp_procurement(keywords: list[str], probe: SourceProbe | None = None) -> list[dict]:
     with request.urlopen(UNDP_RSS_URL, timeout=30, context=SSL_CONTEXT) as response:
         xml_bytes = response.read()
+        if probe is not None:
+            probe.record(http_status=getattr(response, "status", None) or response.getcode())
 
     root = ET.fromstring(xml_bytes)
     ns = {
@@ -2127,9 +2244,14 @@ def fetch_undp_procurement(keywords: list[str]) -> list[dict]:
         "undp": "http://procurement-notices.undp.org/rss_feed/spec/",
     }
 
+    feed_items = root.findall("rss:item", ns)
+    parsed_rows = 0
+
     items = []
-    for item in root.findall("rss:item", ns):
+    for item in feed_items:
         title = get_xml_text(item, "undp:title", ns) or get_xml_text(item, "rss:title", ns)
+        if compact_space(title):
+            parsed_rows += 1
         organization = get_xml_text(item, "undp:duty_station", ns) or "UNDP"
         country = get_xml_text(item, "undp:duty_station_cty", ns)
         deadline = get_xml_text(item, "undp:deadline", ns)
@@ -2153,6 +2275,9 @@ def fetch_undp_procurement(keywords: list[str]) -> list[dict]:
             continue
 
         items.append(record)
+
+    if probe is not None:
+        probe.record(fetched=len(feed_items), parsed=parsed_rows)
 
     return items
 
@@ -2203,7 +2328,19 @@ def fetch_ungm_verification_headers() -> dict[str, str]:
     return extract_ungm_verification_headers(html, list(set_cookie_values))
 
 
-def fetch_ungm_notices(keywords: list[str]) -> list[dict]:
+# UNGM renders its own result count into the search response, which gives this one
+# source a control to check the parser against: the page states how many notices it
+# has, so parsing almost none of them is provably wrong rather than merely quiet.
+UNGM_TOTAL_PATTERN = re.compile(r'noticeTotal\s*=\s*"(\d+)"')
+UNGM_SEARCH_PAGE_SIZE = 15
+
+
+def extract_ungm_reported_total(html: str) -> int | None:
+    match = UNGM_TOTAL_PATTERN.search(html or "")
+    return int(match.group(1)) if match else None
+
+
+def fetch_ungm_notices(keywords: list[str], probe: SourceProbe | None = None) -> list[dict]:
     search_terms = list(dict.fromkeys(keywords[:5] or ["video"]))
     verification_headers = fetch_ungm_verification_headers()
     deduped = {}
@@ -2211,7 +2348,7 @@ def fetch_ungm_notices(keywords: list[str]) -> list[dict]:
     for term in search_terms:
         payload = {
             "PageIndex": 0,
-            "PageSize": 15,
+            "PageSize": UNGM_SEARCH_PAGE_SIZE,
             "Title": term,
             "Description": "",
             "Reference": "",
@@ -2236,18 +2373,36 @@ def fetch_ungm_notices(keywords: list[str]) -> list[dict]:
             UNGM_SEARCH_URL,
             data=json.dumps(payload).encode("utf-8"),
             headers=verification_headers,
+            probe=probe,
         )
         soup = BeautifulSoup(html, "html.parser")
 
-        for row in soup.select("div.tableRow.dataRow.notice-table"):
+        rows = soup.select("div.tableRow.dataRow.notice-table")
+        parsed_rows = 0
+        for row in rows:
             record = parse_ungm_row(row)
             if not record:
                 continue
+            parsed_rows += 1
             if not is_open_deadline(record["deadline"]):
                 continue
             if not matches_keywords(record, keywords):
                 continue
             deduped[record["link"] or record["title"]] = record
+
+        if probe is not None:
+            reported_total = extract_ungm_reported_total(html)
+            probe.record(
+                fetched=len(rows),
+                parsed=parsed_rows,
+                reported_total=reported_total,
+                # One page per term, so the page can only have shown us this many.
+                expected_rows=(
+                    min(reported_total, UNGM_SEARCH_PAGE_SIZE)
+                    if reported_total is not None
+                    else None
+                ),
+            )
 
     return list(deduped.values())
 
@@ -2303,7 +2458,7 @@ def fetch_ungm_agency_notices(
     return items
 
 
-def fetch_icimod_announcements(keywords: list[str]) -> list[dict]:
+def fetch_icimod_announcements(keywords: list[str], probe: SourceProbe | None = None) -> list[dict]:
     search_terms = list(dict.fromkeys(keywords[:5] or ["videography"]))
     deduped = {}
 
@@ -2313,6 +2468,16 @@ def fetch_icimod_announcements(keywords: list[str]) -> list[dict]:
 
         if not isinstance(posts, list):
             continue
+
+        if probe is not None:
+            probe.record(
+                fetched=len(posts),
+                parsed=sum(
+                    1 for post in posts
+                    if html_to_text((post.get("title") or {}).get("rendered", ""))
+                ),
+                http_status=200,
+            )
 
         for post in posts:
             link = post.get("link", "")
@@ -2355,13 +2520,16 @@ def fetch_icimod_announcements(keywords: list[str]) -> list[dict]:
     return list(deduped.values())
 
 
-def fetch_welthungerhilfe_tenders(keywords: list[str]) -> list[dict]:
-    html = request_text(WELTHUNGERHILFE_TENDERS_URL)
+def fetch_welthungerhilfe_tenders(keywords: list[str], probe: SourceProbe | None = None) -> list[dict]:
+    html = request_text(WELTHUNGERHILFE_TENDERS_URL, probe=probe)
     soup = BeautifulSoup(html, "html.parser")
     items = []
     seen_links = set()
 
-    for node in soup.select("div.tender__list__item"):
+    nodes = soup.select("div.tender__list__item")
+    parsed_rows = 0
+
+    for node in nodes:
         title_link = node.select_one(".tender__list__item__title a[href]")
         title = compact_space(title_link.get_text(" ", strip=True) if title_link else "")
         link = compact_space(title_link.get("href") if title_link else "")
@@ -2374,6 +2542,7 @@ def fetch_welthungerhilfe_tenders(keywords: list[str]) -> list[dict]:
         if not title or not link:
             continue
 
+        parsed_rows += 1
         absolute_link = parse.urljoin(WELTHUNGERHILFE_TENDERS_URL, link).split("#", 1)[0]
         if absolute_link in seen_links:
             continue
@@ -2399,6 +2568,9 @@ def fetch_welthungerhilfe_tenders(keywords: list[str]) -> list[dict]:
             continue
 
         items.append(record)
+
+    if probe is not None:
+        probe.record(fetched=len(nodes), parsed=parsed_rows)
 
     return items
 
