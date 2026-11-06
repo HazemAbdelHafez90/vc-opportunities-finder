@@ -46,20 +46,17 @@ class RetiredSourceTests(unittest.TestCase):
                 return []
             return fetcher
 
-        original = {
-            "fetch_undp_procurement": _lib.fetch_undp_procurement,
-            "fetch_ungm_notices": _lib.fetch_ungm_notices,
-            "fetch_icimod_announcements": _lib.fetch_icimod_announcements,
-            "fetch_welthungerhilfe_tenders": _lib.fetch_welthungerhilfe_tenders,
-            "fetch_reliefweb_jobs": _lib.fetch_reliefweb_jobs,
-        }
-        for attr, label in (
+        fetchers = (
             ("fetch_undp_procurement", "UNDP Procurement"),
             ("fetch_ungm_notices", "UNGM"),
             ("fetch_icimod_announcements", "ICIMOD"),
             ("fetch_welthungerhilfe_tenders", "Welthungerhilfe"),
             ("fetch_reliefweb_jobs", "ReliefWeb"),
-        ):
+            ("fetch_plan_international_tenders", "Plan International"),
+            ("fetch_caf_tenders", "CAF"),
+        )
+        original = {attr: getattr(_lib, attr) for attr, _ in fetchers}
+        for attr, label in fetchers:
             setattr(_lib, attr, recorder(label))
         try:
             _, results = _lib.fetch_live_items("appname", ["video"])

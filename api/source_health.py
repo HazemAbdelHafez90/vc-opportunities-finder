@@ -37,6 +37,17 @@ QUALITY_FAILURE_RATIO = 0.30
 QUALITY_MINIMUM_ROWS = 5
 DEFAULT_QUIET_FLOOR_BUSINESS_DAYS = 2
 QUIET_GAP_PERCENTILE = 95
+
+# Sources that match nothing in a normal month by design: they publish a handful
+# of tenders at a time and only occasionally a media one. Silence from them is not
+# a symptom, so the quiet rule gets a long leash and the hard-fail rule -- which
+# compares rows parsed before filtering -- does the real watching. A per-source
+# value in the settings row still wins over this.
+SPARSE_SOURCE_QUIET_BUSINESS_DAYS = {
+    "Welthungerhilfe": 90,
+    "Plan International": 90,
+    "CAF": 90,
+}
 HARD_FAIL_HISTORY_RUNS = 30
 INCIDENT_REMINDER_DAYS = 3
 UNGM_CONTROL_RATIO = 0.50
