@@ -202,12 +202,29 @@ def evaluate_quiet_source(
     today: date,
     floor_days: int,
     override_days: int | None,
+    watched_since: date | None = None,
 ) -> dict[str, Any] | None:
     threshold = quiet_threshold_business_days(
         new_row_days, floor_days=floor_days, override_days=override_days
     )
     if not new_row_days:
-        return None
+        # A source that has never produced a row is the worst case, not an exempt
+        # one: measure from the day we started watching it instead.
+        if watched_since is None:
+            return None
+        quiet_for = business_days_between(watched_since, today)
+        if quiet_for <= threshold:
+            return None
+        return {
+            "rule": RULE_QUIET_SOURCE,
+            "summary": f"No rows at all in {quiet_for} business days of watching.",
+            "detail": (
+                f"Watched since {watched_since.isoformat()} and this source has never "
+                f"contributed a row."
+            ),
+            "quietBusinessDays": quiet_for,
+            "thresholdBusinessDays": threshold,
+        }
 
     last_new_row = max(new_row_days)
     quiet_for = business_days_between(last_new_row, today)
@@ -299,6 +316,7 @@ def evaluate_source(
     today: date,
     floor_days: int = DEFAULT_QUIET_FLOOR_BUSINESS_DAYS,
     override_days: int | None = None,
+    watched_since: date | None = None,
 ) -> dict[str, Any]:
     """Judge one source after one run.
 
@@ -317,6 +335,7 @@ def evaluate_source(
             today=today,
             floor_days=floor_days,
             override_days=override_days,
+            watched_since=watched_since,
         ),
     ):
         if finding:
@@ -356,7 +375,13 @@ def decide_incident_action(
             # outage to the reader; record the new rule without mailing again.
             return {"action": "update", "email": False, "rule": evaluation.get("rule")}
 
-        last_notified = to_datetime(open_incident.get("lastNotifiedAt") or open_incident.get("openedAt"))
+        if not open_incident.get("lastNotifiedAt"):
+            # The incident opened but nothing was sent -- no recipients, no token,
+            # alerts off. Retry on the next run rather than waiting out the
+            # reminder window on an email nobody received.
+            return {"action": "remind", "email": True, "rule": evaluation.get("rule")}
+
+        last_notified = to_datetime(open_incident.get("lastNotifiedAt"))
         if last_notified and now - last_notified >= timedelta(days=reminder_days):
             return {"action": "remind", "email": True, "rule": evaluation.get("rule")}
         return {"action": "none", "email": False, "rule": evaluation.get("rule")}
@@ -387,11 +412,17 @@ def rows_trend(history: list[dict[str, Any]], runs: int = 7) -> list[int]:
 
 
 def status_tone(state: str, *, has_open_incident: bool = False) -> str:
-    """The dot colour on the desk header."""
-    if state == STATE_UNKNOWN:
-        return "grey"
+    """The dot colour on the desk header.
+
+    Red is "failing on the latest run"; amber is "an incident is still open but the
+    last run came back clean", which is how a recovering source reads before anyone
+    has closed its incident. Checking the incident first is what makes amber
+    reachable at all.
+    """
     if state == STATE_INCIDENT:
         return "red"
     if has_open_incident:
         return "amber"
+    if state == STATE_UNKNOWN:
+        return "grey"
     return "green"

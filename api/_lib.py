@@ -980,7 +980,10 @@ def run_refresh_sync(*, triggered_by: str = "manual") -> dict[str, Any]:
         try:
             from api.source_monitor import ping_heartbeat
 
-            heartbeat = ping_heartbeat(overall_status == "completed" and not failed_sources)
+            # "Did the daily job run", not "was every source healthy" -- a single
+            # flaky source must not make the uptime monitor cry wolf about a run
+            # that completed. Source failures are what the incident alerts cover.
+            heartbeat = ping_heartbeat(overall_status == "completed")
         except Exception as exc:
             print(f"[heartbeat] skipped: {exc}")
 
@@ -2159,10 +2162,11 @@ def fetch_reliefweb_jobs(appname: str, keywords: list[str], probe: SourceProbe |
     response = request_json(url, data=json.dumps(payload).encode("utf-8"))
     entries = response.get("data", []) or []
     if probe is not None:
+        # No http_status: request_json does not report one, and inventing a 200
+        # would hand evaluate_hard_fail a value nothing ever read.
         probe.record(
             fetched=len(entries),
             parsed=sum(1 for entry in entries if (entry.get("fields") or {}).get("title")),
-            http_status=200,
         )
     results = []
 
@@ -2476,7 +2480,6 @@ def fetch_icimod_announcements(keywords: list[str], probe: SourceProbe | None = 
                     1 for post in posts
                     if html_to_text((post.get("title") or {}).get("rendered", ""))
                 ),
-                http_status=200,
             )
 
         for post in posts:
