@@ -83,7 +83,8 @@ def get_source_run_history(source: str, limit: int = SOURCE_RUN_HISTORY_LIMIT) -
             "source_runs",
             query={
                 "select": "source,status,http_status,rows_fetched,rows_parsed,rows_matched,"
-                          "rows_new,rows_missing_deadline,rows_suspicious_title,error_message,finished_at",
+                          "rows_new,rows_missing_deadline,rows_suspicious_title,error_message,"
+                          "finished_at,health_state,health_rule",
                 "source": f"eq.{source}",
                 "order": "finished_at.desc",
                 "limit": str(limit),
@@ -109,7 +110,24 @@ def serialize_source_run_row(row: dict[str, Any]) -> dict[str, Any]:
         "rowsSuspiciousTitle": row.get("rows_suspicious_title"),
         "errorMessage": row.get("error_message"),
         "finishedAt": row.get("finished_at"),
+        "healthState": row.get("health_state"),
+        "healthRule": row.get("health_rule"),
     }
+
+
+def get_last_new_row_at(source: str) -> str | None:
+    """When this source last contributed a row, read from the corpus itself."""
+    rows = supabase_request(
+        "GET",
+        "opportunities",
+        query={
+            "select": "first_seen_at",
+            "source": f"eq.{source}",
+            "order": "first_seen_at.desc",
+            "limit": "1",
+        },
+    ) or []
+    return rows[0].get("first_seen_at") if rows else None
 
 
 def get_new_row_days(source: str) -> list:
@@ -414,9 +432,10 @@ def get_source_health_overview() -> list[dict[str, Any]]:
         elif state is None:
             state = health.STATE_HEALTHY if len(history) > 1 else health.STATE_UNKNOWN
 
-        last_new_row_at = next(
-            (run["finishedAt"] for run in history if (run.get("rowsNew") or 0) > 0), None
-        )
+        try:
+            last_new_row_at = get_last_new_row_at(source)
+        except RuntimeError:
+            last_new_row_at = None
         overview.append({
             "source": source,
             "state": state,
