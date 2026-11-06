@@ -71,6 +71,8 @@ MANAGED_SOURCES = [
     "UNGM",
     "ICIMOD",
     "Welthungerhilfe",
+    "Plan International",
+    "CAF",
 ]
 
 # Retired: still shown, no longer fetched. ICIMOD contributed one tender in eight
@@ -86,6 +88,8 @@ SOURCE_PRIORITY = {
     "UNGM": 3,
     "ReliefWeb": 4,
     "Welthungerhilfe": 5,
+    "Plan International": 6,
+    "CAF": 7,
 }
 RUNNING_SYNC_STALE_MINUTES = 15
 POSTMARK_API_URL = "https://api.postmarkapp.com/email"
@@ -2050,6 +2054,8 @@ def fetch_live_items(appname: str, keywords: list[str]) -> tuple[list[dict[str, 
         ("UNGM", fetch_ungm_notices, (keywords,), {}),
         ("ICIMOD", fetch_icimod_announcements, (keywords,), {}),
         ("Welthungerhilfe", fetch_welthungerhilfe_tenders, (keywords,), {}),
+        ("Plan International", fetch_plan_international_tenders, (keywords,), {}),
+        ("CAF", fetch_caf_tenders, (keywords,), {}),
     ]
 
     if appname:
@@ -2636,10 +2642,14 @@ def fetch_save_the_children_tenders(keywords: list[str]) -> list[dict]:
     return items
 
 
-def fetch_plan_international_tenders(keywords: list[str]) -> list[dict]:
-    html = request_text(PLAN_TENDERS_URL)
+def fetch_plan_international_tenders(
+    keywords: list[str], probe: SourceProbe | None = None
+) -> list[dict]:
+    html = request_text(PLAN_TENDERS_URL, probe=probe)
     soup = BeautifulSoup(html, "html.parser")
     items = []
+    fetched_rows = 0
+    parsed_rows = 0
 
     for heading in soup.select("h3"):
         title = compact_space(heading.get_text(" ", strip=True))
@@ -2658,9 +2668,12 @@ def fetch_plan_international_tenders(keywords: list[str]) -> list[dict]:
         if not section_nodes:
             continue
 
+        fetched_rows += 1
         record = parse_plan_international_tender(title, section_nodes)
         if not record:
             continue
+
+        parsed_rows += 1
         if record["deadline"] and not is_open_deadline(record["deadline"]):
             continue
 
@@ -2670,15 +2683,18 @@ def fetch_plan_international_tenders(keywords: list[str]) -> list[dict]:
 
         items.append(record)
 
+    if probe is not None:
+        probe.record(fetched=fetched_rows, parsed=parsed_rows)
+
     return items
 
 
-def fetch_caf_tenders(keywords: list[str]) -> list[dict]:
+def fetch_caf_tenders(keywords: list[str], probe: SourceProbe | None = None) -> list[dict]:
     detail_urls = []
     seen_urls = set()
 
     for index_url in CAF_TENDER_INDEX_URLS:
-        html = request_text(index_url)
+        html = request_text(index_url, probe=probe)
         soup = BeautifulSoup(html, "html.parser")
 
         for anchor in soup.select("a[href]"):
@@ -2702,10 +2718,25 @@ def fetch_caf_tenders(keywords: list[str]) -> list[dict]:
             detail_urls.append(absolute_url)
 
     items = []
-    for detail_url in detail_urls[:25]:
-        record = parse_caf_tender(detail_url, request_text(detail_url))
+    parsed_rows = 0
+    candidate_urls = detail_urls[:25]
+    for detail_url in candidate_urls:
+        # CAF leaves links to tenders it has deleted on its own index, so a 404 on
+        # one detail page is routine and must not fail the source.
+        try:
+            html = request_text(detail_url)
+        except Exception as exc:
+            print(
+                f"[refresh] CAF detail page unavailable, skipped: {detail_url} "
+                f"({summarize_source_error(exc)})"
+            )
+            continue
+
+        record = parse_caf_tender(detail_url, html)
         if not record:
             continue
+
+        parsed_rows += 1
         if record["deadline"] and not is_open_deadline(record["deadline"]):
             continue
 
@@ -2719,6 +2750,9 @@ def fetch_caf_tenders(keywords: list[str]) -> list[dict]:
             continue
 
         items.append(record)
+
+    if probe is not None:
+        probe.record(fetched=len(candidate_urls), parsed=parsed_rows)
 
     return items
 
@@ -2736,6 +2770,10 @@ def is_caf_tender_detail_path(path: str) -> bool:
         "/en/inside-caf/about-us/tenders/tenders-tab",
         "/inside-caf/about-us/official-documents/tenders",
         "/en/inside-caf/about-us/official-documents/tenders",
+        "/inside-caf/about-us/official-documents/tenders/afcon",
+        "/en/inside-caf/about-us/official-documents/tenders/afcon",
+        "/inside-caf/about-us/official-documents/tenders/documents",
+        "/en/inside-caf/about-us/official-documents/tenders/documents",
     }
 
     if normalized_path in disallowed_index_paths:
@@ -2875,7 +2913,7 @@ def extract_save_the_children_title(soup: BeautifulSoup) -> str:
 
 
 def extract_caf_title(soup: BeautifulSoup) -> str:
-    for selector in ("main h1", "article h1", ".news-title", "h1", "h2"):
+    for selector in ("main h1", "article h1", ".news-title", "title", "h1", "h2"):
         node = soup.select_one(selector)
         text = compact_space(node.get_text(" ", strip=True) if node else "")
         if text:
@@ -3082,14 +3120,20 @@ def looks_like_caf_media_tender(title: str, content: str) -> bool:
         "insurance",
         "medical",
         "vehicle",
-        "it",
+        # Not a bare "it": as a whole word that is ordinary English prose, and as a
+        # substring it matched every page containing "with" or "limited", which is
+        # why this gate used to reject everything.
+        "information technology",
+        "it services",
         "erp",
         "accreditation",
         "access control",
         "construction",
         "security",
     ]
-    return any(term in haystack for term in positive_terms) and not any(term in haystack for term in negative_terms)
+    return matches_any_fit_term(haystack, positive_terms) and not matches_any_fit_term(
+        haystack, negative_terms
+    )
 
 
 def is_ungm_error_page(html: str) -> bool:

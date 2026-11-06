@@ -383,7 +383,8 @@ def evaluate_sources_after_run(
             new_row_days=new_row_days,
             today=today,
             floor_days=settings["quietFloorDays"],
-            override_days=settings["quietOverrides"].get(source),
+            override_days=settings["quietOverrides"].get(source)
+            or health.SPARSE_SOURCE_QUIET_BUSINESS_DAYS.get(source),
             watched_since=watched_since,
         )
         result["healthState"] = evaluation.get("state")

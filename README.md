@@ -7,6 +7,8 @@ Internal Fairpicture tool for discovering media-related opportunities from:
 - UNGM
 - ICIMOD
 - Welthungerhilfe
+- Plan International
+- CAF (Confédération Africaine de Football)
 
 The app now uses Supabase as its cache and read layer:
 
@@ -218,6 +220,15 @@ The floor (`source_quiet_floor_days`, default 2) and per-source overrides
 (`source_quiet_overrides`, e.g. `{"Welthungerhilfe": 45}`) live in
 `notification_settings`.
 
+Some sources match nothing in a normal month by design — they publish a handful of
+tenders at a time and only occasionally a media one. Those carry a committed
+default in `SPARSE_SOURCE_QUIET_BUSINESS_DAYS` (Welthungerhilfe, Plan International
+and CAF, at 90 business days) so they do not open an incident within days of being
+switched on. A value in `source_quiet_overrides` still wins over it. For these the
+`hard_fail` rule does the real watching, which is why both new fetchers carry a
+probe: without one a run row reports `rowsParsed` as the matched count, and a page
+that silently stopped yielding tenders would look the same as a quiet week.
+
 ### Retiring a source
 
 `MANAGED_SOURCES` is the read filter on the opportunities table, so a source
@@ -228,6 +239,22 @@ and is no longer fetched, judged or shown in the health strip.
 
 ICIMOD is retired. It contributed one tender in eight months, found 26 March 2026
 and declined, for 9.8 seconds of every run.
+
+### Plan International and CAF
+
+Both were written when the tool was first built and never switched on, so for
+months nothing fetched them. They are live as of 6 November 2026, and both are
+expected to match nothing most weeks:
+
+- **Plan International** lists two or three tenders at a time; the current ones are
+  generators and a data review. 0.5s per run.
+- **CAF** is the African football confederation, and it does tender the work we do:
+  AFCON 2027 photography, audiovisual and creative content production, WAFCON
+  filming. It keeps only currently-open tenders on the site and deletes the rest, so
+  all three of those are already 404 and the one tender open today is health
+  insurance. The value is forward-looking: catching the next one on the day it is
+  posted. 2.5s per run, and its index links to tenders it has already deleted, which
+  is why a 404 on a detail page is skipped rather than failing the source.
 
 ### Alerts
 
