@@ -2084,6 +2084,39 @@ def fetch_reliefweb_jobs(appname: str, keywords: list[str]) -> list[dict]:
     return results
 
 
+# UNDP's feed sets area_desc to OTHER on 529 of its 535 notices, so it says nothing
+# about what is being bought and leaves the row with no procurement vocabulary at all.
+# The instrument is in the title instead, which is also how the same tender reads when
+# it arrives from UNGM -- so deriving it here makes the two sources agree.
+UNDP_NOTICE_TYPE_PATTERNS = [
+    (r"request for proposals?|\brfps?\b", "Request for proposal"),
+    (r"request for quotations?|\brfqs?\b", "Request for quotation"),
+    (r"invitation to bid|\bitbs?\b", "Invitation to bid"),
+    (r"invitation to pre-?qualify|\bitps?\b|prequalification", "Invitation to pre-qualify"),
+    (r"expression of interest|manifestation d.?interet|\beois?\b", "Request for EOI"),
+    (r"request for information|\brfis?\b", "Request for information"),
+    (r"long[- ]term agreement|\bltas?\b", "Long term agreement"),
+]
+UNDP_INDIVIDUAL_TYPE_PATTERN = (
+    r"(?:individual|national|international)(?:\s+\w+){0,3}\s+(?:consultant|contractor|specialist)"
+    r"|external collaborator"
+    r"|especialista|consultor[ae]?\b"
+)
+UNDP_DEFAULT_NOTICE_TYPE = "Procurement notice"
+
+
+def derive_undp_notice_type(title: str) -> str:
+    haystack = normalize_lookup_key(title or "")
+    for pattern, label in UNDP_NOTICE_TYPE_PATTERNS:
+        if re.search(pattern, haystack):
+            return label
+    if re.search(UNDP_INDIVIDUAL_TYPE_PATTERN, haystack):
+        # Calling this a procurement notice would hand an individual hire the vendor
+        # credit the fit score reserves for tenders addressed to a firm.
+        return "Call for individual consultants"
+    return UNDP_DEFAULT_NOTICE_TYPE
+
+
 def fetch_undp_procurement(keywords: list[str]) -> list[dict]:
     with request.urlopen(UNDP_RSS_URL, timeout=30, context=SSL_CONTEXT) as response:
         xml_bytes = response.read()
@@ -2100,7 +2133,6 @@ def fetch_undp_procurement(keywords: list[str]) -> list[dict]:
         organization = get_xml_text(item, "undp:duty_station", ns) or "UNDP"
         country = get_xml_text(item, "undp:duty_station_cty", ns)
         deadline = get_xml_text(item, "undp:deadline", ns)
-        area = get_xml_text(item, "undp:area_desc", ns) or "Procurement"
         link = get_xml_text(item, "rss:link", ns)
 
         record = {
@@ -2108,7 +2140,7 @@ def fetch_undp_procurement(keywords: list[str]) -> list[dict]:
             "organization": compact_space(organization),
             "countryList": [compact_space(country)] if country else [],
             "deadline": deadline,
-            "type": compact_space(area),
+            "type": derive_undp_notice_type(compact_space(title)),
             "link": link,
             "source": "UNDP Procurement",
         }
@@ -2982,6 +3014,10 @@ FIT_PROCUREMENT_TERMS = [
     "expression of interest",
     "invitation to bid",
     "terms of reference",
+    "procurement notice",
+    "long term agreement",
+    "long term arrangement",
+    "pre qualify",
 ]
 FIT_AGENCY_TERMS = [
     "firm",
