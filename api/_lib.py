@@ -62,6 +62,9 @@ DEFAULT_KEYWORDS = [
 RELIEFWEB_OPPORTUNITY_TYPES = ["Tender/RFPs/EOIs", "Consultancy"]
 RELIEFWEB_RESULT_LIMIT = 50
 OPEN_STATUSES = {"open", "stale"}
+# Every source the desk reads, filters and reports on. Retired sources stay in this
+# list: it is the read filter on the opportunities table, so dropping a name here
+# would hide the tenders that source already contributed.
 MANAGED_SOURCES = [
     "ReliefWeb",
     "UNDP Procurement",
@@ -69,6 +72,14 @@ MANAGED_SOURCES = [
     "ICIMOD",
     "Welthungerhilfe",
 ]
+
+# Retired: still shown, no longer fetched. ICIMOD contributed one tender in eight
+# months -- found 26 March 2026 and declined -- for 9.8 seconds of every run, which
+# was the second largest share of a sync after UNGM.
+RETIRED_SOURCES = {"ICIMOD"}
+
+# What the daily run actually fetches and the health rules judge.
+ACTIVE_SOURCES = [source for source in MANAGED_SOURCES if source not in RETIRED_SOURCES]
 SOURCE_PRIORITY = {
     "ICIMOD": 1,
     "UNDP Procurement": 2,
@@ -847,7 +858,7 @@ def serialize_sync_run(row: dict[str, Any] | None) -> dict[str, Any]:
             "hasSync": False,
             "lastSyncedAt": None,
             "status": "never",
-            "sources": MANAGED_SOURCES,
+            "sources": ACTIVE_SOURCES,
             "sourceResults": [],
         }
 
@@ -856,7 +867,7 @@ def serialize_sync_run(row: dict[str, Any] | None) -> dict[str, Any]:
         "id": row.get("id"),
         "lastSyncedAt": row.get("finished_at") or row.get("started_at"),
         "status": row.get("status") or "unknown",
-        "sources": row.get("sources") or MANAGED_SOURCES,
+        "sources": row.get("sources") or ACTIVE_SOURCES,
         "newCount": row.get("new_count") or 0,
         "updatedCount": row.get("updated_count") or 0,
         "errorLog": row.get("error_log"),
@@ -869,7 +880,7 @@ def run_refresh_sync(*, triggered_by: str = "manual") -> dict[str, Any]:
     if active_sync:
         raise RuntimeError("A refresh is already running. Please wait a moment and try again.")
 
-    sync_run = create_sync_run(MANAGED_SOURCES, triggered_by=triggered_by)
+    sync_run = create_sync_run(ACTIVE_SOURCES, triggered_by=triggered_by)
 
     source_results: list[dict[str, Any]] = []
 
@@ -2039,7 +2050,7 @@ def fetch_live_items(appname: str, keywords: list[str]) -> tuple[list[dict[str, 
 
     if appname:
         source_configs.append(("ReliefWeb", fetch_reliefweb_jobs, (appname, keywords), {}))
-    else:
+    elif "ReliefWeb" in ACTIVE_SOURCES:
         source_results.append(
             build_source_result(
                 "ReliefWeb",
@@ -2048,6 +2059,8 @@ def fetch_live_items(appname: str, keywords: list[str]) -> tuple[list[dict[str, 
                 error_message="Skipped because no ReliefWeb appname was configured.",
             )
         )
+
+    source_configs = [config for config in source_configs if config[0] in ACTIVE_SOURCES]
 
     for source_name, fetcher, args, kwargs in source_configs:
         result = fetch_source_safely(source_name, fetcher, *args, **kwargs)

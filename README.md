@@ -218,6 +218,17 @@ The floor (`source_quiet_floor_days`, default 2) and per-source overrides
 (`source_quiet_overrides`, e.g. `{"Welthungerhilfe": 45}`) live in
 `notification_settings`.
 
+### Retiring a source
+
+`MANAGED_SOURCES` is the read filter on the opportunities table, so a source
+removed from it loses every tender it ever contributed from the desk, the emails
+and Insights. To stop fetching a source without losing its history, add it to
+`RETIRED_SOURCES`: it stays readable and filterable, drops out of `ACTIVE_SOURCES`,
+and is no longer fetched, judged or shown in the health strip.
+
+ICIMOD is retired. It contributed one tender in eight months, found 26 March 2026
+and declined, for 9.8 seconds of every run.
+
 ### Alerts
 
 One email when an incident opens, a reminder every 3 days while it stays open, one
