@@ -3212,3 +3212,39 @@ html[data-theme="dark"] .theme-toggle__icon--moon {
     opacity: 1 !important;
   }
 }
+
+/* Source health strip -------------------------------------------------------
+   A source that fails silently is the failure mode this answers, so the dots sit
+   in the app bar where they are seen on every visit rather than behind a drawer. */
+.source-strip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: 12px;
+  padding: 4px 8px;
+  border: 1px solid var(--border-subtle, rgba(0, 0, 0, 0.08));
+  border-radius: 999px;
+}
+
+.source-strip__dot {
+  position: relative;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--source-dot, #9ca3af);
+  cursor: help;
+}
+
+.source-strip__dot[data-tone="green"] { --source-dot: #2f9e68; }
+.source-strip__dot[data-tone="amber"] { --source-dot: #d79121; }
+.source-strip__dot[data-tone="red"] { --source-dot: #c0462f; }
+.source-strip__dot[data-tone="grey"] { --source-dot: #9ca3af; }
+
+.source-strip__dot[data-tone="red"]::after {
+  content: "";
+  position: absolute;
+  inset: -3px;
+  border-radius: 50%;
+  border: 1px solid #c0462f;
+  opacity: 0.45;
+}

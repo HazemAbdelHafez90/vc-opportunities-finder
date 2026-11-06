@@ -1191,7 +1191,46 @@ async function fetchSyncStatus() {
     throw new Error(responseData?.error || "Could not load sync status.");
   }
 
+  renderSourceStrip(responseData?.sourceHealth);
   return responseData?.sync || null;
+}
+
+const SOURCE_STATE_WORDS = {
+  healthy: "working normally",
+  incident: "needs attention",
+  unknown: "not enough history yet",
+};
+
+// One dot per source in the app bar. A source that stops working used to say
+// nothing at all -- UNGM returned nothing for 51 days and every run still read
+// "completed".
+function renderSourceStrip(sourceHealth) {
+  const strip = document.querySelector("#source-strip");
+  if (!strip) {
+    return;
+  }
+
+  const entries = Array.isArray(sourceHealth) ? sourceHealth : [];
+  if (entries.length === 0) {
+    strip.hidden = true;
+    strip.innerHTML = "";
+    return;
+  }
+
+  strip.hidden = false;
+  strip.innerHTML = entries
+    .map((entry) => {
+      const lastNewRow = entry?.lastNewRowAt
+        ? `last new row ${formatCompactDate(entry.lastNewRowAt)}`
+        : "no new row on record";
+      const incident = entry?.incident?.summary
+        ? ` — ${entry.incident.summary}`
+        : "";
+      const state = SOURCE_STATE_WORDS[entry?.state] || entry?.state || "unknown";
+      const tooltip = `${entry?.source}: ${state}, ${lastNewRow}${incident}`;
+      return `<span class="source-strip__dot" data-tone="${escapeAttribute(entry?.tone || "grey")}" title="${escapeAttribute(tooltip)}" role="img" aria-label="${escapeAttribute(tooltip)}"></span>`;
+    })
+    .join("");
 }
 
 async function fetchNotificationSettings() {

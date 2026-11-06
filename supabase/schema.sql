@@ -243,3 +243,98 @@ with check (auth.role() = 'service_role');
 insert into public.notification_settings (id)
 values (true)
 on conflict (id) do nothing;
+
+-- ---------------------------------------------------------------------------
+-- Source health
+--
+-- sync_run_sources records what a run produced. These two tables record how the
+-- source behaved, which is a different question: a source can report success and
+-- zero rows for 63 runs in a row, as Welthungerhilfe did, and nothing in the old
+-- shape distinguishes "page broke" from "nothing published for us this week".
+-- ---------------------------------------------------------------------------
+
+create table if not exists public.source_runs (
+  id uuid primary key default gen_random_uuid(),
+  sync_run_id uuid null references public.sync_runs(id) on delete set null,
+  source text not null,
+  started_at timestamptz not null default now(),
+  finished_at timestamptz not null default now(),
+  duration_ms integer not null default 0,
+  status text not null check (status in ('completed', 'failed', 'skipped')),
+  http_status integer null,
+  rows_fetched integer not null default 0,
+  rows_parsed integer not null default 0,
+  rows_matched integer not null default 0,
+  rows_new integer not null default 0,
+  rows_missing_deadline integer not null default 0,
+  rows_suspicious_title integer not null default 0,
+  control_reported_total integer null,
+  control_expected_rows integer null,
+  error_message text null,
+  health_state text null check (health_state in ('healthy', 'unknown', 'incident')),
+  health_rule text null,
+  created_at timestamptz not null default now()
+);
+
+create table if not exists public.source_incidents (
+  id uuid primary key default gen_random_uuid(),
+  source text not null,
+  rule text not null,
+  summary text not null,
+  detail text null,
+  opened_at timestamptz not null default now(),
+  last_notified_at timestamptz null,
+  reminder_count integer not null default 0,
+  resolved_at timestamptz null,
+  last_good_run_at timestamptz null,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+-- One open incident per source at a time: a second fault on an already-broken
+-- source is the same outage to whoever reads the email.
+create unique index if not exists source_incidents_one_open_per_source
+  on public.source_incidents (source)
+  where resolved_at is null;
+
+create index if not exists source_runs_source_finished_idx
+  on public.source_runs (source, finished_at desc);
+create index if not exists source_runs_sync_run_idx
+  on public.source_runs (sync_run_id);
+create index if not exists source_incidents_source_idx
+  on public.source_incidents (source, opened_at desc);
+
+alter table public.notification_settings
+  add column if not exists source_alert_enabled boolean not null default true,
+  add column if not exists source_quiet_floor_days integer not null default 2,
+  add column if not exists source_quiet_overrides jsonb not null default '{}'::jsonb;
+
+alter table public.notification_settings
+  drop constraint if exists notification_settings_quiet_floor_check;
+
+alter table public.notification_settings
+  add constraint notification_settings_quiet_floor_check
+  check (source_quiet_floor_days >= 1 and source_quiet_floor_days <= 60);
+
+drop trigger if exists source_incidents_set_updated_at on public.source_incidents;
+create trigger source_incidents_set_updated_at
+before update on public.source_incidents
+for each row
+execute function public.set_updated_at();
+
+alter table public.source_runs enable row level security;
+alter table public.source_incidents enable row level security;
+
+drop policy if exists "service role only source_runs" on public.source_runs;
+create policy "service role only source_runs"
+on public.source_runs
+for all
+using (auth.role() = 'service_role')
+with check (auth.role() = 'service_role');
+
+drop policy if exists "service role only source_incidents" on public.source_incidents;
+create policy "service role only source_incidents"
+on public.source_incidents
+for all
+using (auth.role() = 'service_role')
+with check (auth.role() = 'service_role');

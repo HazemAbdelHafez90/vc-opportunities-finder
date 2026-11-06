@@ -124,6 +124,7 @@ You need these exact environment variables:
 - `POSTMARK_SERVER_TOKEN`
 - `POSTMARK_FROM_EMAIL`
 - `POSTMARK_FROM_NAME` (optional)
+- `SOURCE_HEARTBEAT_URL` (optional, see Source Health Monitoring)
 
 ### 4. Add env vars in Vercel
 
@@ -180,3 +181,62 @@ If you only run a static file server, the frontend will load but the API routes 
 - Notification recipient emails, sender override, and expiry lead time are configurable in the app UI and stored in Supabase
 - New-tender emails send once per tender; about-to-expire alerts send once per tender for the currently configured lead time; expired-tender alerts send once when an item moves to expired
 - The sender email must be valid for your Postmark server or sender signature
+
+## Source Health Monitoring
+
+A source that breaks used to say nothing: UNGM returned no results for 51 days and
+every run still reported `completed`. Each run now records, per source, how the
+source behaved rather than only what it yielded.
+
+`source_runs` stores one row per source per run: timings, HTTP status, rows fetched,
+rows parsed, rows matched, rows new, rows with a missing deadline, rows with an
+unusable title, and the error if there was one.
+
+The distinction between **parsed** and **matched** is the point. Welthungerhilfe
+parses 23 tenders every run and matches none, because it publishes food and
+logistics work. Parsed rows say the page still works; matched rows say whether it
+had anything for us. A rule reading only matched rows calls that source dead daily.
+
+### The rules
+
+| Rule | Fires when |
+| --- | --- |
+| `hard_fail` | The fetch raised, returned a non-2xx status, or parsed 0 rows while its own last 30 runs median above 0 |
+| `quiet_source` | No new rows for more than N consecutive business days |
+| `quality_drop` | More than 30% of parsed rows have no deadline or an unusable title |
+| `control_probe` | UNGM only — the search page reports its own result count and fewer than half were parsed |
+
+N is derived per source from its own rhythm: the 95th-percentile business-day gap
+between the days it produced new rows, with a floor. A source with no history is
+`unknown`, never `healthy`.
+
+The floor (`source_quiet_floor_days`, default 2) and per-source overrides
+(`source_quiet_overrides`, e.g. `{"Welthungerhilfe": 45}`) live in
+`notification_settings`.
+
+### Alerts
+
+One email when an incident opens, a reminder every 3 days while it stays open, one
+when it clears. Never one per failed run. Each carries the source, the rule, the
+last good run, the rows trend over the last 7 runs, and a link to the desk.
+
+### Dead man's switch
+
+The alerting above cannot fire if the daily job never runs. Set `SOURCE_HEARTBEAT_URL`
+to a URL from any uptime monitor that watches for an inbound ping — Healthchecks.io,
+Cronitor, Better Stack and others all expose one. The job calls it once, at the end of
+a run that completed with no failed source. A failed run deliberately sends nothing.
+
+```bash
+vercel env add SOURCE_HEARTBEAT_URL
+```
+
+Then, in the monitor:
+
+1. Create a check with a period of 1 day and a grace window that ends at 07:00
+   Africa/Cairo — the Vercel cron runs at 06:00 UTC, which gives the job an hour.
+2. Set the alert channel to the address that should hear about it.
+3. Copy the check's ping URL into `SOURCE_HEARTBEAT_URL` and redeploy.
+
+No vendor is hard-coded: the job issues a plain GET to whatever URL is configured,
+and does nothing at all when the variable is unset.
