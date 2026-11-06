@@ -17,7 +17,7 @@ from urllib import error, request
 from api import source_health as health
 from api._lib import (
     SSL_CONTEXT,
-    MANAGED_SOURCES,
+    ACTIVE_SOURCES,
     compact_space,
     format_sender,
     get_notification_settings,
@@ -451,7 +451,7 @@ def get_source_health_overview() -> list[dict[str, Any]]:
     """What the desk header needs: one entry per managed source."""
     open_incidents = get_open_incidents()
     overview = []
-    for source in MANAGED_SOURCES:
+    for source in ACTIVE_SOURCES:
         history = get_source_run_history(source, limit=7)
         latest = history[0] if history else None
         # The state is what the latest run concluded. An open incident colours the
