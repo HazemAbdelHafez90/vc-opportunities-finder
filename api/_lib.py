@@ -945,10 +945,14 @@ def run_refresh_sync(*, triggered_by: str = "manual") -> dict[str, Any]:
 
         # How many of this run's new rows each source contributed. The quiet-source
         # rule reads this, so it has to be per source rather than the run total.
+        # Credit every source that carried the tender, not just the one that won the
+        # merge: a source whose finds are always also published elsewhere would
+        # otherwise record no new rows and drift into a quiet-source incident.
         new_rows_by_source: dict[str, int] = {}
         for row in new_rows:
-            key = row.get("source") or "Unknown source"
-            new_rows_by_source[key] = new_rows_by_source.get(key, 0) + 1
+            carried_by = row.get("matched_sources") or [row.get("source") or "Unknown source"]
+            for key in carried_by:
+                new_rows_by_source[key] = new_rows_by_source.get(key, 0) + 1
         for result in source_results:
             result["rowsNew"] = new_rows_by_source.get(result.get("source"), 0)
 

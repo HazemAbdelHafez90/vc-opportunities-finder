@@ -131,17 +131,25 @@ def get_last_new_row_at(source: str) -> str | None:
 
 
 def get_new_row_days(source: str) -> list:
-    """The days this source first contributed a row, as dates."""
-    rows = supabase_request(
-        "GET",
-        "opportunities",
-        query={
-            "select": "first_seen_at",
-            "source": f"eq.{source}",
-            "order": "first_seen_at.desc",
-            "limit": "2000",
-        },
-    ) or []
+    """The days this source first contributed a row, as dates.
+
+    Counted over matched_sources as well as the primary source, so a tender merged
+    across sources credits every source that carried it rather than only the one
+    the merge kept.
+    """
+    rows = []
+    for criterion in ({"source": f"eq.{source}"},
+                      {"matched_sources": f'cs.["{source}"]'}):
+        rows += supabase_request(
+            "GET",
+            "opportunities",
+            query={
+                "select": "first_seen_at",
+                "order": "first_seen_at.desc",
+                "limit": "2000",
+                **criterion,
+            },
+        ) or []
     days = {health.to_date(row.get("first_seen_at")) for row in rows}
     return sorted(day for day in days if day)
 
