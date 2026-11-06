@@ -9,7 +9,7 @@ import json
 import os
 import re
 import ssl
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from typing import Any
 from urllib import error, parse, request
 import xml.etree.ElementTree as ET
@@ -35,6 +35,10 @@ WELTHUNGERHILFE_TENDERS_URL = "https://www.welthungerhilfe.org/tenders"
 SAVE_THE_CHILDREN_TENDERS_URL = "https://www.savethechildren.net/tenders"
 PLAN_TENDERS_URL = "https://plan-international.org/calls-tender/"
 CAF_TENDERS_URL = "https://www.cafonline.com/inside-caf/about-us/tenders/tenders-tab/"
+TED_SEARCH_URL = "https://api.ted.europa.eu/v3/notices/search"
+TED_NOTICE_PAGE_URL = "https://ted.europa.eu/en/notice/-/detail"
+FIND_A_TENDER_RELEASES_URL = "https://www.find-tender.service.gov.uk/api/1.0/ocdsReleasePackages"
+FIND_A_TENDER_NOTICE_PAGE_URL = "https://www.find-tender.service.gov.uk/Notice"
 CAF_TENDER_INDEX_URLS = [
     "https://www.cafonline.com/inside-caf/about-us/tenders/tenders-tab/",
     "https://www.cafonline.com/en/inside-caf/about-us/tenders/tenders-tab/",
@@ -73,6 +77,8 @@ MANAGED_SOURCES = [
     "Welthungerhilfe",
     "Plan International",
     "CAF",
+    "TED",
+    "Find a Tender",
 ]
 
 # Retired: still shown, no longer fetched. ICIMOD contributed one tender in eight
@@ -90,6 +96,8 @@ SOURCE_PRIORITY = {
     "Welthungerhilfe": 5,
     "Plan International": 6,
     "CAF": 7,
+    "TED": 8,
+    "Find a Tender": 9,
 }
 RUNNING_SYNC_STALE_MINUTES = 15
 POSTMARK_API_URL = "https://api.postmarkapp.com/email"
@@ -2056,6 +2064,8 @@ def fetch_live_items(appname: str, keywords: list[str]) -> tuple[list[dict[str, 
         ("Welthungerhilfe", fetch_welthungerhilfe_tenders, (keywords,), {}),
         ("Plan International", fetch_plan_international_tenders, (keywords,), {}),
         ("CAF", fetch_caf_tenders, (keywords,), {}),
+        ("TED", fetch_ted_notices, (keywords,), {}),
+        ("Find a Tender", fetch_find_a_tender_notices, (keywords,), {}),
     ]
 
     if appname:
@@ -3183,6 +3193,362 @@ def fetch_ungm_deadline_from_notice(link: str | None) -> str | None:
         return None
 
     return compact_space(match.group(1))
+
+
+# TED publishes every EU procurement notice, so the narrowing has to happen in the
+# query rather than in the keyword filter. The classification does it: these are the
+# CPV divisions for film, video and photography services, and TED matches a parent
+# code against its children, so 92111000 also brings in 92111100, 92111200 and the
+# rest of the branch.
+TED_MEDIA_CPV_CODES = [
+    "92100000",  # Motion picture and video services
+    "92110000",  # Motion picture and video tape production and related services
+    "92111000",  # Motion picture and video production services
+    "92112000",  # Services in connection with motion picture and video production
+    "79960000",  # Photographic and ancillary services
+    "79961000",  # Photographic services
+]
+
+# Only the notice types that are a live call for bids. The award types (can-*, veat)
+# are results, and the plain prior-information types (pin-only, pin-rtl, pin-buyer)
+# are advance warnings with nothing to bid on yet -- across the 863 active notices in
+# these CPV codes, not one of those carried a submission deadline, while 583 of 585
+# cn-standard notices did. pin-cfc-* is the prior information notice that doubles as
+# the call for competition, so it belongs with the cn types.
+TED_CALL_NOTICE_TYPES = [
+    "cn-standard",
+    "cn-social",
+    "cn-desg",
+    "pin-cfc-standard",
+    "pin-cfc-social",
+]
+
+TED_NOTICE_TYPE_LABELS = {
+    "cn-standard": "Contract notice",
+    "cn-social": "Contract notice (social and other specific services)",
+    "cn-desg": "Design contest notice",
+    "pin-cfc-standard": "Prior information notice used as a call for competition",
+    "pin-cfc-social": "Prior information notice used as a call for competition",
+}
+TED_DEFAULT_NOTICE_TYPE = "Contract notice"
+
+# How far back to look. The job runs daily, so a fortnight is slack for a run that
+# failed rather than a real reach: scope=ACTIVE already drops anything closed.
+TED_PUBLICATION_WINDOW_DAYS = 14
+TED_PAGE_LIMIT = 100
+TED_MAX_PAGES = 5
+TED_FIELDS = [
+    "publication-number",
+    "notice-title",
+    "notice-type",
+    "publication-date",
+    "deadline-receipt-request",
+    "organisation-name-buyer",
+    "organisation-country-buyer",
+    "place-of-performance",
+    "links",
+]
+
+
+def build_ted_query() -> str:
+    cpv = " ".join(TED_MEDIA_CPV_CODES)
+    notice_types = " ".join(TED_CALL_NOTICE_TYPES)
+    return (
+        f"classification-cpv IN ({cpv})"
+        f" AND publication-date >= today(-{TED_PUBLICATION_WINDOW_DAYS})"
+        f" AND notice-type IN ({notice_types})"
+        " SORT BY publication-date DESC"
+    )
+
+
+def fetch_ted_notices(keywords: list[str], probe: SourceProbe | None = None) -> list[dict]:
+    query = build_ted_query()
+    items = []
+    fetched_rows = 0
+    parsed_rows = 0
+
+    for page in range(1, TED_MAX_PAGES + 1):
+        payload = {
+            "query": query,
+            "fields": TED_FIELDS,
+            "limit": TED_PAGE_LIMIT,
+            "page": page,
+            # Without this the search runs over every notice TED has ever carried and
+            # answers with years-old rows, which is the whole reason this is explicit.
+            "scope": "ACTIVE",
+            "onlyLatestVersions": True,
+        }
+        response = json.loads(
+            request_text(TED_SEARCH_URL, data=json.dumps(payload).encode("utf-8"), probe=probe)
+        )
+        notices = response.get("notices") or []
+        fetched_rows += len(notices)
+
+        for notice in notices:
+            record = parse_ted_notice(notice)
+            if not record:
+                continue
+
+            parsed_rows += 1
+            if not is_open_deadline(record["deadline"]):
+                continue
+            if not matches_keywords(record, keywords):
+                continue
+
+            items.append(record)
+
+        total = response.get("totalNoticeCount") or 0
+        if len(notices) < TED_PAGE_LIMIT or page * TED_PAGE_LIMIT >= total:
+            break
+
+    if probe is not None:
+        probe.record(fetched=fetched_rows, parsed=parsed_rows)
+
+    return items
+
+
+def parse_ted_notice(notice: dict[str, Any]) -> dict[str, Any] | None:
+    publication_number = compact_space(String(notice.get("publication-number")))
+    title = pick_ted_english(notice.get("notice-title"))
+    if not publication_number or not title:
+        return None
+
+    # TED renders the English title as "Country - CPV description - native title".
+    # Splitting it gives a country name in English without a code table, and leaves a
+    # title that reads like the other sources rather than repeating the country.
+    country, _, remainder = title.partition(" – ")
+    if remainder:
+        countries = [country]
+        title = remainder
+    else:
+        countries = ted_country_codes(notice)
+
+    notice_type = compact_space(String(notice.get("notice-type")))
+
+    return {
+        "title": title,
+        "organization": pick_ted_english(notice.get("organisation-name-buyer")) or "N/A",
+        "countryList": countries,
+        "deadline": first_non_empty(notice.get("deadline-receipt-request") or []),
+        "type": TED_NOTICE_TYPE_LABELS.get(notice_type, TED_DEFAULT_NOTICE_TYPE),
+        "link": pick_ted_link(notice, publication_number),
+        "source": "TED",
+    }
+
+
+def pick_ted_english(value: Any) -> str:
+    """TED returns text as a map of language code to value, across all 24 official
+    languages. Buyer names are not translated, so the map often holds only the
+    national language and there is nothing to prefer."""
+    if isinstance(value, str):
+        return compact_space(value)
+    if not isinstance(value, dict):
+        return ""
+
+    for key in ("eng", *sorted(value)):
+        text = value.get(key)
+        if isinstance(text, list):
+            text = first_non_empty(text)
+        if isinstance(text, str) and text.strip():
+            return compact_space(text)
+
+    return ""
+
+
+def ted_country_codes(notice: dict[str, Any]) -> list[str]:
+    codes = []
+    for key in ("organisation-country-buyer", "place-of-performance"):
+        for value in notice.get(key) or []:
+            # place-of-performance mixes ISO country codes with NUTS region codes;
+            # only the three-letter country codes say anything a reader can use.
+            code = compact_space(String(value))
+            if len(code) == 3 and code.isalpha() and code.upper() not in codes:
+                codes.append(code.upper())
+        if codes:
+            break
+    return codes
+
+
+def pick_ted_link(notice: dict[str, Any], publication_number: str) -> str:
+    html_links = ((notice.get("links") or {}).get("html")) or {}
+    for key in ("ENG", *sorted(html_links)):
+        link = html_links.get(key)
+        if isinstance(link, str) and link.strip():
+            return compact_space(link)
+
+    return f"{TED_NOTICE_PAGE_URL}/{publication_number}"
+
+
+# Find a Tender hands back an OCDS release package, where one procurement accumulates
+# releases over its life: a tender release while it is open, then award and contract
+# releases once it is done. Only the open stages are an opportunity.
+FIND_A_TENDER_OPEN_TAGS = {"tender", "tenderUpdate", "planning", "planningUpdate"}
+
+# The service has a `stages` parameter and it cannot be used. Asking for
+# stages=tender returns only the notices whose legal basis is the old EU directive
+# (32014L0024) and silently drops every notice published under the Procurement Act
+# 2023 -- 5 releases where an unfiltered sweep of the same day found 54. Passing
+# stages=planning,tender returns nothing at all. So the window is swept whole and
+# filtered here.
+FIND_A_TENDER_WINDOW_HOURS = 24
+# 100 is the documented ceiling; asking for more is a 400.
+FIND_A_TENDER_PAGE_LIMIT = 100
+# The service allows 12 requests before it answers "Rate limit of 12 exceeded", so a
+# single sweep has to stay well under that to leave room for a manual refresh landing
+# near the cron. A normal day is 430 releases over 5 pages; 8 is headroom, not a target.
+FIND_A_TENDER_MAX_PAGES = 8
+
+FIND_A_TENDER_DOCUMENT_TYPE_LABELS = {
+    "tenderNotice": "Tender notice",
+    "marketEngagementNotice": "Preliminary market engagement notice",
+    "plannedProcurementNotice": "Planned procurement notice",
+    "pinNotice": "Prior information notice",
+    "contractNotice": "Contract notice",
+}
+FIND_A_TENDER_DEFAULT_TYPE = "Tender notice"
+
+
+def fetch_find_a_tender_notices(
+    keywords: list[str], probe: SourceProbe | None = None
+) -> list[dict]:
+    now = datetime.now(timezone.utc)
+    window_start = now - timedelta(hours=FIND_A_TENDER_WINDOW_HOURS)
+    query = {
+        "limit": FIND_A_TENDER_PAGE_LIMIT,
+        "updatedFrom": window_start.strftime("%Y-%m-%dT%H:%M:%S"),
+        "updatedTo": now.strftime("%Y-%m-%dT%H:%M:%S"),
+    }
+
+    items = []
+    fetched_rows = 0
+    parsed_rows = 0
+    cursor = None
+
+    for page_number in range(FIND_A_TENDER_MAX_PAGES):
+        page_query = dict(query)
+        if cursor:
+            page_query["cursor"] = cursor
+
+        url = f"{FIND_A_TENDER_RELEASES_URL}?{parse.urlencode(page_query)}"
+        try:
+            response = json.loads(request_text(url, probe=probe))
+        except Exception:
+            # Losing the whole source because the rate limit bit on page four would
+            # throw away three pages we already hold and report an outage that is not
+            # one. The first page is different: nothing was read, so that is a failure
+            # and belongs to the caller. Either way the probe keeps the HTTP status,
+            # so a run that was cut short still shows the 429 that cut it.
+            if page_number == 0:
+                raise
+            break
+
+        releases = response.get("releases") or []
+        fetched_rows += len(releases)
+
+        for release in releases:
+            record = parse_find_a_tender_release(release)
+            if not record:
+                continue
+
+            parsed_rows += 1
+            if not is_open_deadline(record["deadline"]):
+                continue
+
+            description = record.pop("_description", "")
+            if not matches_keywords({**record, "type": f"{record['type']} {description}"}, keywords):
+                continue
+
+            items.append(record)
+
+        cursor = extract_find_a_tender_cursor(response)
+        if not releases or not cursor:
+            break
+
+    if probe is not None:
+        probe.record(fetched=fetched_rows, parsed=parsed_rows)
+
+    return items
+
+
+def parse_find_a_tender_release(release: dict[str, Any]) -> dict[str, Any] | None:
+    tags = {compact_space(String(tag)) for tag in release.get("tag") or []}
+    if not tags & FIND_A_TENDER_OPEN_TAGS:
+        return None
+
+    tender = release.get("tender") or {}
+    title = compact_space(String(tender.get("title")))
+    if not title:
+        return None
+
+    documents = [
+        *(tender.get("documents") or []),
+        *((release.get("planning") or {}).get("documents") or []),
+    ]
+    notice_id = compact_space(String(release.get("id")))
+
+    return {
+        "title": title,
+        "organization": compact_space(String((release.get("buyer") or {}).get("name"))) or "N/A",
+        "countryList": find_a_tender_countries(release),
+        "deadline": find_a_tender_deadline(release),
+        "type": find_a_tender_type(documents),
+        "link": find_a_tender_link(documents, notice_id),
+        "source": "Find a Tender",
+        "_description": compact_space(String(tender.get("description"))),
+    }
+
+
+def find_a_tender_deadline(release: dict[str, Any]) -> str | None:
+    tender_period = (release.get("tender") or {}).get("tenderPeriod") or {}
+    end_date = compact_space(String(tender_period.get("endDate")))
+    if end_date:
+        return end_date
+
+    # A planning release has no tender period; what it has is an engagement milestone,
+    # and its due date is the date a supplier actually has to act on.
+    for milestone in (release.get("planning") or {}).get("milestones") or []:
+        due_date = compact_space(String((milestone or {}).get("dueDate")))
+        if due_date:
+            return due_date
+
+    return None
+
+
+def find_a_tender_countries(release: dict[str, Any]) -> list[str]:
+    countries = []
+    for party in release.get("parties") or []:
+        address = (party or {}).get("address") or {}
+        name = compact_space(String(address.get("countryName")))
+        if name and name not in countries:
+            countries.append(name)
+    return countries
+
+
+def find_a_tender_type(documents: list[dict[str, Any]]) -> str:
+    for document in documents:
+        label = FIND_A_TENDER_DOCUMENT_TYPE_LABELS.get(
+            compact_space(String((document or {}).get("documentType")))
+        )
+        if label:
+            return label
+    return FIND_A_TENDER_DEFAULT_TYPE
+
+
+def find_a_tender_link(documents: list[dict[str, Any]], notice_id: str) -> str:
+    for document in documents:
+        url = compact_space(String((document or {}).get("url")))
+        if url:
+            return url
+    return f"{FIND_A_TENDER_NOTICE_PAGE_URL}/{notice_id}" if notice_id else FIND_A_TENDER_NOTICE_PAGE_URL
+
+
+def extract_find_a_tender_cursor(response: dict[str, Any]) -> str | None:
+    next_link = compact_space(String((response.get("links") or {}).get("next")))
+    if not next_link:
+        return None
+
+    cursor = parse.parse_qs(parse.urlparse(next_link).query).get("cursor") or []
+    return cursor[0] if cursor else None
 
 
 FIT_HIGH_SCORE = 70

@@ -62,6 +62,8 @@ class NewSourceWiringTests(unittest.TestCase):
                 "fetch_reliefweb_jobs",
                 "fetch_plan_international_tenders",
                 "fetch_caf_tenders",
+                "fetch_ted_notices",
+                "fetch_find_a_tender_notices",
             )
         }
         for attr, label in (
@@ -72,6 +74,8 @@ class NewSourceWiringTests(unittest.TestCase):
             ("fetch_reliefweb_jobs", "ReliefWeb"),
             ("fetch_plan_international_tenders", "Plan International"),
             ("fetch_caf_tenders", "CAF"),
+            ("fetch_ted_notices", "TED"),
+            ("fetch_find_a_tender_notices", "Find a Tender"),
         ):
             setattr(_lib, attr, recorder(label))
         try:
