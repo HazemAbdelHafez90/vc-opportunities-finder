@@ -76,7 +76,7 @@ class TedQueryTests(unittest.TestCase):
     def test_the_query_pins_scope_window_and_notice_types(self):
         captured = {}
 
-        def fake_request_text(url, data=None, headers=None, probe=None):
+        def fake_request_text(url, data=None, headers=None, probe=None, **kwargs):
             captured["url"] = url
             captured["payload"] = json.loads(data.decode("utf-8"))
             return ted_response([])
@@ -164,7 +164,7 @@ class TedRecordTests(unittest.TestCase):
 
 class TedFetchTests(unittest.TestCase):
     def test_the_keyword_filter_runs_after_parsing_and_the_probe_counts_both(self):
-        def fake_request_text(url, data=None, headers=None, probe=None):
+        def fake_request_text(url, data=None, headers=None, probe=None, **kwargs):
             return ted_response([TED_VIDEO_NOTICE, TED_CATERING_NOTICE])
 
         original = _lib.request_text
@@ -186,7 +186,7 @@ class TedFetchTests(unittest.TestCase):
     def test_a_closed_deadline_is_dropped(self):
         stale = {**TED_VIDEO_NOTICE, "deadline-receipt-request": ["2020-01-01T10:00:00+01:00"]}
 
-        def fake_request_text(url, data=None, headers=None, probe=None):
+        def fake_request_text(url, data=None, headers=None, probe=None, **kwargs):
             return ted_response([stale])
 
         original = _lib.request_text
@@ -203,7 +203,7 @@ class TedFetchTests(unittest.TestCase):
     def test_paging_stops_once_the_reported_total_is_covered(self):
         pages = []
 
-        def fake_request_text(url, data=None, headers=None, probe=None):
+        def fake_request_text(url, data=None, headers=None, probe=None, **kwargs):
             payload = json.loads(data.decode("utf-8"))
             pages.append(payload["page"])
             return ted_response([TED_VIDEO_NOTICE], total=1)
@@ -300,7 +300,7 @@ class FindATenderStagesTests(unittest.TestCase):
     def test_the_request_does_not_filter_by_stage(self):
         urls = []
 
-        def fake_request_text(url, data=None, headers=None, probe=None):
+        def fake_request_text(url, data=None, headers=None, probe=None, **kwargs):
             urls.append(url)
             return find_a_tender_response([])
 
@@ -361,7 +361,7 @@ class FindATenderRecordTests(unittest.TestCase):
 
 class FindATenderFetchTests(unittest.TestCase):
     def test_award_releases_are_fetched_but_never_parsed_or_matched(self):
-        def fake_request_text(url, data=None, headers=None, probe=None):
+        def fake_request_text(url, data=None, headers=None, probe=None, **kwargs):
             return find_a_tender_response(
                 [
                     FIND_A_TENDER_TENDER_RELEASE,
@@ -399,7 +399,7 @@ class FindATenderFetchTests(unittest.TestCase):
             },
         }
 
-        def fake_request_text(url, data=None, headers=None, probe=None):
+        def fake_request_text(url, data=None, headers=None, probe=None, **kwargs):
             return find_a_tender_response([release])
 
         original = _lib.request_text
@@ -416,7 +416,7 @@ class FindATenderFetchTests(unittest.TestCase):
     def test_it_follows_the_cursor_to_the_next_page(self):
         urls = []
 
-        def fake_request_text(url, data=None, headers=None, probe=None):
+        def fake_request_text(url, data=None, headers=None, probe=None, **kwargs):
             urls.append(url)
             if "cursor=" in url:
                 return find_a_tender_response([FIND_A_TENDER_PLANNING_RELEASE])
@@ -441,7 +441,7 @@ class FindATenderFetchTests(unittest.TestCase):
         outage that is not one."""
         calls = []
 
-        def fake_request_text(url, data=None, headers=None, probe=None):
+        def fake_request_text(url, data=None, headers=None, probe=None, **kwargs):
             calls.append(url)
             if len(calls) == 1:
                 if probe is not None:
@@ -467,7 +467,7 @@ class FindATenderFetchTests(unittest.TestCase):
         self.assertEqual(probe.http_status, 429)
 
     def test_a_failure_on_the_very_first_page_still_fails_the_source(self):
-        def fake_request_text(url, data=None, headers=None, probe=None):
+        def fake_request_text(url, data=None, headers=None, probe=None, **kwargs):
             raise RuntimeError("Rate limit of 12 exceeded. Please retry after 120 seconds.")
 
         original = _lib.request_text

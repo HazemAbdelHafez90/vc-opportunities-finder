@@ -9,6 +9,7 @@ import json
 import os
 import re
 import ssl
+import time
 from datetime import date, datetime, timedelta, timezone
 from typing import Any
 from urllib import error, parse, request
@@ -99,6 +100,9 @@ SOURCE_PRIORITY = {
     "TED": 8,
     "Find a Tender": 9,
 }
+# A gateway answering for a server it could not reach -- not an answer about our
+# request, and worth one more attempt before calling the source down.
+TRANSIENT_HTTP_STATUSES = {502, 503, 504}
 RUNNING_SYNC_STALE_MINUTES = 15
 POSTMARK_API_URL = "https://api.postmarkapp.com/email"
 DEFAULT_NOTIFICATION_SETTINGS = {
@@ -503,23 +507,38 @@ def request_text(
     data: bytes | None = None,
     headers: dict[str, str] | None = None,
     probe: "SourceProbe | None" = None,
+    retries: int = 0,
+    retry_delay: float = 2.0,
 ) -> str:
+    """`retries` applies only to a gateway answering for a server it could not reach
+    (502, 503, 504). Those say nothing about our request, and a source that answers
+    in two seconds on every other attempt is not down. Only the status of the final
+    attempt reaches the probe: the health rules take the worst status a run saw, so
+    recording a 504 we then recovered from would raise the incident anyway.
+    """
     merged_headers = dict(DEFAULT_HEADERS)
     if data is not None:
         merged_headers["Content-Type"] = "application/json"
     merged_headers.update(headers or {})
     req = request.Request(url, data=data, headers=merged_headers, method="POST" if data else "GET")
 
-    try:
-        with request.urlopen(req, timeout=30, context=SSL_CONTEXT) as response:
+    attempt = 0
+    while True:
+        try:
+            with request.urlopen(req, timeout=30, context=SSL_CONTEXT) as response:
+                if probe is not None:
+                    probe.record(http_status=getattr(response, "status", None) or response.getcode())
+                return response.read().decode("utf-8", errors="replace")
+        except error.HTTPError as exc:
+            if exc.code in TRANSIENT_HTTP_STATUSES and attempt < retries:
+                attempt += 1
+                print(f"[refresh] {url} answered HTTP {exc.code}, retry {attempt} of {retries}")
+                time.sleep(retry_delay * attempt)
+                continue
             if probe is not None:
-                probe.record(http_status=getattr(response, "status", None) or response.getcode())
-            return response.read().decode("utf-8", errors="replace")
-    except error.HTTPError as exc:
-        if probe is not None:
-            probe.record(http_status=exc.code)
-        body = exc.read().decode("utf-8", errors="replace")
-        raise RuntimeError(body or f"HTTP {exc.code}") from exc
+                probe.record(http_status=exc.code)
+            body = exc.read().decode("utf-8", errors="replace")
+            raise RuntimeError(body or f"HTTP {exc.code}") from exc
 
 
 def supabase_request(
@@ -3431,7 +3450,7 @@ def fetch_find_a_tender_notices(
 
         url = f"{FIND_A_TENDER_RELEASES_URL}?{parse.urlencode(page_query)}"
         try:
-            response = json.loads(request_text(url, probe=probe))
+            response = json.loads(request_text(url, probe=probe, retries=2))
         except Exception:
             # Losing the whole source because the rate limit bit on page four would
             # throw away three pages we already hold and report an outage that is not
