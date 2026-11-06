@@ -1220,9 +1220,11 @@ function renderSourceStrip(sourceHealth) {
   strip.hidden = false;
   strip.innerHTML = entries
     .map((entry) => {
+      // Before the first recorded run this reads from the corpus, so "none yet"
+      // means the source has genuinely never contributed a row.
       const lastNewRow = entry?.lastNewRowAt
         ? `last new row ${formatCompactDate(entry.lastNewRowAt)}`
-        : "no new row on record";
+        : "no rows from this source yet";
       const incident = entry?.incident?.summary
         ? ` — ${entry.incident.summary}`
         : "";
