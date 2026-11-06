@@ -175,6 +175,7 @@ let supabaseClient = null;
 let authFlowMode = "sign-in";
 let authProvider = "supabase";
 let authBypassMode = false;
+let signOutRequested = false;
 let tableSortState = { column: "fit", direction: "desc" };
 let detailActionBusy = false;
 // The Insights tab aggregates the whole corpus, so it keeps its own dataset rather than
@@ -401,6 +402,9 @@ async function bootstrapAuth() {
     const {
       data: { session },
     } = await supabaseClient.auth.getSession();
+
+    registerAuthStateListener();
+
     if (session?.access_token) {
       await applyAuthSession(session);
       return;
@@ -412,15 +416,56 @@ async function bootstrapAuth() {
     }
 
     await applyAuthSession(null);
-
-    supabaseClient.auth.onAuthStateChange((_event, sessionState) => {
-      void applyAuthSession(sessionState);
-    });
   } catch (error) {
     setAuthMessage(error.message || "Could not initialise sign-in.", true);
     setAuthBusy(false);
     setBootState(false);
     authShell.hidden = false;
+  }
+}
+
+// Access tokens last an hour. supabase-js refreshes them in the background and
+// gives up with a SIGNED_OUT once the refresh token is gone, so the page only
+// learns that its session ended if this listener is attached on every path
+// through bootstrapAuth -- including the common one, where a stored session was
+// restored and the user never saw the sign-in form.
+function registerAuthStateListener() {
+  supabaseClient.auth.onAuthStateChange((event, sessionState) => {
+    if (event === "INITIAL_SESSION") {
+      // bootstrapAuth reads the stored session itself; applying it twice would
+      // run loadInitialData twice on every page load.
+      return;
+    }
+
+    if (authProvider === "admin" || authBypassMode) {
+      // The admin fallback carries its own token. A Supabase event says nothing
+      // about whether that token is still valid.
+      return;
+    }
+
+    if (sessionState?.access_token) {
+      if (event === "TOKEN_REFRESHED" || authSession?.access_token) {
+        // Same user, newer token: swap it in without reloading the desk.
+        authSession = sessionState;
+        return;
+      }
+      void applyAuthSession(sessionState);
+      return;
+    }
+
+    const message = signOutRequested ? "" : "Your session expired. Sign in again.";
+    signOutRequested = false;
+    void endSession(message);
+  });
+}
+
+// Drop back to the sign-in form. applyAuthSession(null) clears the cached desk,
+// the admin token and any open modal, so the app cannot sit there looking signed
+// in while every API call comes back 401.
+async function endSession(message) {
+  await applyAuthSession(null);
+  if (message) {
+    setAuthMessage(message, false);
   }
 }
 
@@ -753,6 +798,7 @@ async function handleSignOut() {
   }
 
   if (supabaseClient) {
+    signOutRequested = true;
     await supabaseClient.auth.signOut();
   }
   closeSettingsModal();
@@ -1045,11 +1091,25 @@ async function getAccessToken() {
     throw new Error("Local preview mode is active. Sign in to access API data.");
   }
 
-  if (authSession?.access_token) {
-    return authSession.access_token;
+  const adminToken = window.localStorage.getItem(ADMIN_AUTH_TOKEN_KEY) || "";
+  if (authProvider === "admin" && adminToken) {
+    authSession = { access_token: adminToken };
+    return adminToken;
   }
 
-  const adminToken = window.localStorage.getItem(ADMIN_AUTH_TOKEN_KEY) || "";
+  if (supabaseClient) {
+    // Never hand out the cached copy: only supabase-js knows whether this hour's
+    // token is still valid, and getSession refreshes it when it is not.
+    const {
+      data: { session },
+    } = await supabaseClient.auth.getSession();
+    if (session?.access_token) {
+      authSession = session;
+      authProvider = "supabase";
+      return session.access_token;
+    }
+  }
+
   if (adminToken) {
     authSession = { access_token: adminToken };
     authProvider = "admin";
@@ -1060,15 +1120,8 @@ async function getAccessToken() {
     throw new Error("Supabase auth is not configured.");
   }
 
-  const {
-    data: { session },
-  } = await supabaseClient.auth.getSession();
-  authSession = session || null;
-  authProvider = "supabase";
-  if (!authSession?.access_token) {
-    throw new Error("Your session expired. Sign in again.");
-  }
-  return authSession.access_token;
+  void endSession("Your session expired. Sign in again.");
+  throw new Error("Your session expired. Sign in again.");
 }
 
 async function fetchWithAuth(input, init = {}) {
@@ -1082,14 +1135,11 @@ async function fetchWithAuth(input, init = {}) {
   });
 
   if (response.status === 401) {
-    if (authProvider === "admin") {
-      clearAdminSession();
-      authSession = null;
-      authUserProfile = null;
-      authProvider = "supabase";
-    } else if (supabaseClient) {
+    if (authProvider !== "admin" && supabaseClient) {
+      signOutRequested = true;
       await supabaseClient.auth.signOut();
     }
+    await endSession("Your access is no longer valid for this workspace. Sign in again.");
     throw new Error("Your access is no longer valid for this workspace.");
   }
 
