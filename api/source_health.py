@@ -32,6 +32,9 @@ SUSPICIOUS_TITLE_PATTERNS = [
 ]
 
 QUALITY_FAILURE_RATIO = 0.30
+# Below this many rows a single malformed one swings the ratio past any threshold,
+# so the rule abstains rather than alerting on a sample of one.
+QUALITY_MINIMUM_ROWS = 5
 DEFAULT_QUIET_FLOOR_BUSINESS_DAYS = 2
 QUIET_GAP_PERCENTILE = 95
 HARD_FAIL_HISTORY_RUNS = 30
@@ -224,23 +227,35 @@ def evaluate_quiet_source(
 
 
 def evaluate_quality_drop(current: dict[str, Any]) -> dict[str, Any] | None:
-    parsed = current.get("rowsParsed") or 0
-    if parsed <= 0:
+    """Judged over the rows the run kept, not the rows it parsed.
+
+    The malformed counts are taken from the items the fetcher returned, which are
+    the matched ones. Dividing those by the parsed count compares two different
+    populations and makes the rule useless exactly where it is needed: UNDP parses
+    535 notices and keeps 6, so a 30% threshold on 535 could never be reached by 6
+    rows however broken they were.
+    """
+    kept = current.get("rowsMatched")
+    if kept is None:
+        kept = current.get("rowsParsed") or 0
+    kept = int(kept)
+
+    if kept < QUALITY_MINIMUM_ROWS:
         return None
 
     bad = max(
         int(current.get("rowsMissingDeadline") or 0),
         int(current.get("rowsSuspiciousTitle") or 0),
     )
-    ratio = bad / parsed
+    ratio = bad / kept
     if ratio <= QUALITY_FAILURE_RATIO:
         return None
 
     return {
         "rule": RULE_QUALITY_DROP,
-        "summary": f"{round(ratio * 100)}% of parsed rows came back malformed.",
+        "summary": f"{round(ratio * 100)}% of the rows it kept came back malformed.",
         "detail": (
-            f"{current.get('rowsMissingDeadline') or 0} of {parsed} rows had no deadline and "
+            f"{current.get('rowsMissingDeadline') or 0} of {kept} kept rows had no deadline and "
             f"{current.get('rowsSuspiciousTitle') or 0} had an unusable title."
         ),
         "badRatio": ratio,

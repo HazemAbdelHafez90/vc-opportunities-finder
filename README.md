@@ -192,6 +192,10 @@ source behaved rather than only what it yielded.
 rows parsed, rows matched, rows new, rows with a missing deadline, rows with an
 unusable title, and the error if there was one.
 
+Quality is judged over the rows a run *kept*, not the rows it parsed: the counts
+come from the items the fetcher returned, and UNDP parses 535 notices to keep 6, so
+a threshold applied to the parsed count could never be reached.
+
 The distinction between **parsed** and **matched** is the point. Welthungerhilfe
 parses 23 tenders every run and matches none, because it publishes food and
 logistics work. Parsed rows say the page still works; matched rows say whether it
@@ -203,7 +207,7 @@ had anything for us. A rule reading only matched rows calls that source dead dai
 | --- | --- |
 | `hard_fail` | The fetch raised, returned a non-2xx status, or parsed 0 rows while its own last 30 runs median above 0 |
 | `quiet_source` | No new rows for more than N consecutive business days |
-| `quality_drop` | More than 30% of parsed rows have no deadline or an unusable title |
+| `quality_drop` | More than 30% of the rows a run kept have no deadline or an unusable title, and it kept at least 5 |
 | `control_probe` | UNGM only — the search page reports its own result count and fewer than half were parsed |
 
 N is derived per source from its own rhythm: the 95th-percentile business-day gap
