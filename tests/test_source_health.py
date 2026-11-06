@@ -387,3 +387,65 @@ class HeartbeatTests(unittest.TestCase):
         result = source_monitor.ping_heartbeat(True)
         self.assertFalse(result["configured"])
         self.assertFalse(result["pinged"])
+
+
+class ReviewRegressionTests(unittest.TestCase):
+    """Each of these pins a bug found reviewing the monitoring after it shipped."""
+
+    def test_a_source_that_never_produced_a_row_is_still_judged_quiet(self):
+        """Otherwise a source misconfigured from day one is exempt forever: it
+        parses fine so hard_fail stays silent, and it has no last-new-row to
+        measure a quiet streak from."""
+        result = evaluate_source(
+            current=run(),
+            history=history(30),
+            new_row_days=[],
+            today=date(2026, 11, 6),
+            watched_since=date(2026, 9, 1),
+        )
+        self.assertEqual(result["rule"], RULE_QUIET_SOURCE)
+        self.assertIn("never", result["detail"])
+
+    def test_a_source_watched_only_briefly_is_not_yet_quiet(self):
+        result = evaluate_source(
+            current=run(),
+            history=history(30),
+            new_row_days=[],
+            today=date(2026, 11, 6),
+            watched_since=date(2026, 11, 5),
+        )
+        self.assertNotEqual(result.get("rule"), RULE_QUIET_SOURCE)
+
+    def test_an_open_incident_on_a_recovered_source_shows_amber(self):
+        """Red means failing now. A source whose latest run came back clean while
+        its incident is still open is amber -- the branch was unreachable before,
+        because the state was overwritten to incident first."""
+        self.assertEqual(status_tone(STATE_HEALTHY, has_open_incident=True), "amber")
+        self.assertEqual(status_tone(STATE_INCIDENT, has_open_incident=True), "red")
+        self.assertEqual(status_tone(STATE_UNKNOWN, has_open_incident=True), "amber")
+        self.assertEqual(status_tone(STATE_UNKNOWN), "grey")
+        self.assertEqual(status_tone(STATE_HEALTHY), "green")
+
+    def test_an_incident_whose_email_never_sent_retries_on_the_next_run(self):
+        """Recipients were empty when it opened, so last_notified_at is null. The
+        next run must retry rather than wait out the three-day reminder window on
+        an email nobody received."""
+        incident = {"rule": RULE_HARD_FAIL, "openedAt": "2026-11-06T06:00:00+00:00",
+                    "lastNotifiedAt": None}
+        decision = decide_incident_action(
+            evaluation={"state": STATE_INCIDENT, "rule": RULE_HARD_FAIL, "summary": "down"},
+            open_incident=incident,
+            now=datetime(2026, 11, 6, 6, 5, tzinfo=timezone.utc),
+        )
+        self.assertEqual(decision["action"], "remind")
+        self.assertTrue(decision["email"])
+
+    def test_a_notified_incident_still_waits_out_its_window(self):
+        incident = {"rule": RULE_HARD_FAIL, "openedAt": "2026-11-06T06:00:00+00:00",
+                    "lastNotifiedAt": "2026-11-06T06:00:00+00:00"}
+        decision = decide_incident_action(
+            evaluation={"state": STATE_INCIDENT, "rule": RULE_HARD_FAIL, "summary": "down"},
+            open_incident=incident,
+            now=datetime(2026, 11, 6, 6, 5, tzinfo=timezone.utc),
+        )
+        self.assertFalse(decision["email"])

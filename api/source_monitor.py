@@ -139,7 +139,7 @@ def get_new_row_days(source: str) -> list:
             "select": "first_seen_at",
             "source": f"eq.{source}",
             "order": "first_seen_at.desc",
-            "limit": "500",
+            "limit": "2000",
         },
     ) or []
     days = {health.to_date(row.get("first_seen_at")) for row in rows}
@@ -211,7 +211,11 @@ def serialize_incident_row(row: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def open_incident(source: str, evaluation: dict[str, Any], now_iso: str, last_good_run_at: str | None):
+def open_incident(source: str, evaluation: dict[str, Any], now_iso: str,
+                  last_good_run_at: str | None, notified: bool):
+    """Open an incident. `notified` records whether an email actually went out --
+    writing the time unconditionally would withhold the reminder for three days on
+    an email nobody received."""
     rows = supabase_request(
         "POST",
         "source_incidents",
@@ -221,7 +225,7 @@ def open_incident(source: str, evaluation: dict[str, Any], now_iso: str, last_go
             "summary": evaluation.get("summary") or "",
             "detail": evaluation.get("detail"),
             "opened_at": now_iso,
-            "last_notified_at": now_iso,
+            "last_notified_at": now_iso if notified else None,
             "last_good_run_at": last_good_run_at,
         }],
         prefer="return=representation",
@@ -335,14 +339,22 @@ def evaluate_sources_after_run(
     source_results: list[dict[str, Any]],
     now_iso: str,
 ) -> dict[str, Any]:
-    """Judge every source that ran, record it, and mail only on a change of state."""
+    """Judge every source that ran, record it, and mail only on a change of state.
+
+    The run records are written before any alerting is attempted. They are the
+    foundation every rule reads from, and losing a whole sync's worth of them
+    because an email bounced would be the monitoring destroying its own evidence.
+    Each source's alerting is then isolated, so one failure does not silence the
+    other four.
+    """
     settings = get_source_health_settings()
     now = health.to_datetime(now_iso) or datetime.now(timezone.utc)
     today = now.date()
     open_incidents = get_open_incidents()
     summary = {"evaluated": 0, "incidentsOpened": 0, "incidentsResolved": 0,
-               "remindersSent": 0, "emailsSent": 0, "states": {}}
+               "remindersSent": 0, "emailsSent": 0, "states": {}, "alertErrors": []}
 
+    judged = []
     for result in source_results:
         source = result.get("source") or "Unknown source"
         history = get_source_run_history(source)
@@ -351,6 +363,12 @@ def evaluate_sources_after_run(
         except RuntimeError:
             new_row_days = []
 
+        # How long this source has been watched, for the case where it has never
+        # produced a row and there is no last-new-row to measure from.
+        watched_since = None
+        if history:
+            watched_since = health.to_date(history[-1].get("finishedAt"))
+
         evaluation = health.evaluate_source(
             current=result,
             history=history,
@@ -358,19 +376,27 @@ def evaluate_sources_after_run(
             today=today,
             floor_days=settings["quietFloorDays"],
             override_days=settings["quietOverrides"].get(source),
+            watched_since=watched_since,
         )
         result["healthState"] = evaluation.get("state")
         result["healthRule"] = evaluation.get("rule")
         summary["evaluated"] += 1
         summary["states"][source] = evaluation.get("state")
+        judged.append((source, result, evaluation, history))
 
-        if not settings.get("enabled"):
-            continue
+    persist_source_runs(sync_run_id, source_results)
 
+    if not settings.get("enabled"):
+        return summary
+
+    for source, _result, evaluation, history in judged:
         incident = open_incidents.get(source)
         decision = health.decide_incident_action(
             evaluation=evaluation, open_incident=incident, now=now
         )
+        if decision["action"] == "none":
+            continue
+
         last_good = next(
             (run["finishedAt"] for run in history
              if run.get("status") == "completed" and (run.get("rowsParsed") or 0) > 0),
@@ -380,10 +406,11 @@ def evaluate_sources_after_run(
 
         try:
             if decision["action"] == "open":
-                open_incident(source, evaluation, now_iso, last_good)
+                # Send first: the incident row records whether anyone was told.
+                sent = send_incident_email("open", source, evaluation, trend, last_good)
+                open_incident(source, evaluation, now_iso, last_good, sent)
                 summary["incidentsOpened"] += 1
-                if send_incident_email("open", source, evaluation, trend, last_good):
-                    summary["emailsSent"] += 1
+                summary["emailsSent"] += int(sent)
             elif decision["action"] == "update" and incident:
                 touch_incident(incident["id"], {
                     "rule": evaluation.get("rule"),
@@ -391,28 +418,32 @@ def evaluate_sources_after_run(
                     "detail": evaluation.get("detail"),
                 })
             elif decision["action"] == "remind" and incident:
-                touch_incident(incident["id"], {
-                    "last_notified_at": now_iso,
-                    "reminder_count": (incident.get("reminderCount") or 0) + 1,
-                })
-                summary["remindersSent"] += 1
-                if send_incident_email("remind", source, evaluation, trend, last_good):
+                sent = send_incident_email("remind", source, evaluation, trend, last_good)
+                if sent:
+                    touch_incident(incident["id"], {
+                        "last_notified_at": now_iso,
+                        "reminder_count": (incident.get("reminderCount") or 0) + 1,
+                    })
+                    summary["remindersSent"] += 1
                     summary["emailsSent"] += 1
             elif decision["action"] == "resolve" and incident:
+                sent = send_incident_email("resolve", source, evaluation, trend, last_good)
                 touch_incident(incident["id"], {
                     "resolved_at": now_iso,
-                    "last_notified_at": now_iso,
+                    "last_notified_at": now_iso if sent else incident.get("lastNotifiedAt"),
                 })
                 summary["incidentsResolved"] += 1
-                if send_incident_email("resolve", source, evaluation, trend, last_good):
-                    summary["emailsSent"] += 1
-        except RuntimeError as exc:
+                summary["emailsSent"] += int(sent)
+        except Exception as exc:
+            # A duplicate open incident (two runs overlapping) answers 409 here, and
+            # Postmark can fail outright. Neither is a reason to stop judging the
+            # remaining sources.
             if is_missing_source_health_table(exc):
                 print("[health] source_incidents table is missing; run supabase/schema.sql.")
                 break
-            raise
+            print(f"[health] alerting failed for {source}: {exc}")
+            summary["alertErrors"].append(f"{source}: {compact_space(str(exc))[:120]}")
 
-    persist_source_runs(sync_run_id, source_results)
     return summary
 
 
@@ -423,14 +454,14 @@ def get_source_health_overview() -> list[dict[str, Any]]:
     for source in MANAGED_SOURCES:
         history = get_source_run_history(source, limit=7)
         latest = history[0] if history else None
+        # The state is what the latest run concluded. An open incident colours the
+        # dot through status_tone rather than overwriting the state, so a source
+        # that has recovered but whose incident is still open reads amber instead
+        # of the red it would wear while actually failing.
         state = (latest or {}).get("healthState")
         if not state:
-            state = health.STATE_UNKNOWN if not history else None
-        incident = open_incidents.get(source)
-        if incident:
-            state = health.STATE_INCIDENT
-        elif state is None:
             state = health.STATE_HEALTHY if len(history) > 1 else health.STATE_UNKNOWN
+        incident = open_incidents.get(source)
 
         try:
             last_new_row_at = get_last_new_row_at(source)

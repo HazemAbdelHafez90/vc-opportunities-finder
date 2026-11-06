@@ -229,7 +229,9 @@ last good run, the rows trend over the last 7 runs, and a link to the desk.
 The alerting above cannot fire if the daily job never runs. Set `SOURCE_HEARTBEAT_URL`
 to a URL from any uptime monitor that watches for an inbound ping — Healthchecks.io,
 Cronitor, Better Stack and others all expose one. The job calls it once, at the end of
-a run that completed with no failed source. A failed run deliberately sends nothing.
+a run that completed. A run that failed outright sends nothing, so the monitor notices;
+a run where one source failed still pings, because that is what the incident alerts
+are for and a flaky source must not look like a job that never ran.
 
 ```bash
 vercel env add SOURCE_HEARTBEAT_URL
