@@ -65,8 +65,8 @@ class UndpNoticeTypeTests(unittest.TestCase):
             "type": derive_undp_notice_type(f"UNDP-SSD-00719,1 - {title}"),
             "countryList": ["SOUTH SUDAN"],
         })
-        self.assertEqual(from_ungm["label"], "High fit")
-        self.assertEqual(from_undp["label"], "High fit")
+        self.assertEqual(from_ungm["label"], "Medium fit")
+        self.assertEqual(from_undp["label"], "Medium fit")
         self.assertEqual(from_ungm["score"], from_undp["score"])
 
     def test_an_individual_hire_stays_low_under_the_derived_type(self):

@@ -1821,6 +1821,9 @@ function renderTable(opportunities) {
       const safeAddedAt = escapeHtml(formatCompactDate(opportunity.addedAt));
       const safeStatus = escapeHtml(getStatusBadgeLabel(opportunity));
       const safeId = escapeAttribute(opportunity.id || "");
+      const scopeBadge = opportunity.scopeVisible
+        ? ""
+        : '<span class="status-badge status-badge--reviewed">Scope not visible</span>';
 
       return `
         <tr class="clickable-row" data-opportunity-id="${safeId}">
@@ -1836,6 +1839,7 @@ function renderTable(opportunities) {
           <td data-label="Opportunity">
             <p class="opportunity-title" title="${safeTitleAttr}">${safeTitle}</p>
             <small class="opportunity-subline">${safeSecondary}</small>
+            ${scopeBadge}
           </td>
           <td data-label="Source">
             <span class="source-tag">${safeSource}</span>
@@ -1884,6 +1888,9 @@ function renderCards(opportunities) {
       const safeSource = escapeHtml(getOpportunitySourceLabel(opportunity));
       const safeStatus = escapeHtml(getStatusBadgeLabel(opportunity));
       const safeId = escapeAttribute(opportunity.id || "");
+      const scopeBadge = opportunity.scopeVisible
+        ? ""
+        : '<span class="status-badge status-badge--reviewed">Scope not visible</span>';
 
       return `
         <article class="opportunity-card opportunity-card--${fitTone}${expiringSoon ? " opportunity-card--expiring" : ""}" data-opportunity-id="${safeId}">
@@ -1893,6 +1900,7 @@ function renderCards(opportunities) {
             </div>
             <div class="opportunity-card__badges">
               <span class="fit-badge fit-badge--${fitTone}">${escapeHtml(getFitBadgeLabel(opportunity))}</span>
+              ${scopeBadge}
               ${warmthDescriptor.tone === "new" ? "" : renderWarmthBadge(warmthDescriptor)}
               ${renderPositionBadge(positionDescriptor)}
             </div>

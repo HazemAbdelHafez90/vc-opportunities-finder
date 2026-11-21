@@ -9,6 +9,7 @@ import json
 import os
 import re
 import ssl
+import time
 from datetime import date, datetime, timedelta, timezone
 from typing import Any
 from urllib import error, parse, request
@@ -99,6 +100,9 @@ SOURCE_PRIORITY = {
     "TED": 8,
     "Find a Tender": 9,
 }
+# A gateway answering for a server it could not reach -- not an answer about our
+# request, and worth one more attempt before calling the source down.
+TRANSIENT_HTTP_STATUSES = {502, 503, 504}
 RUNNING_SYNC_STALE_MINUTES = 15
 POSTMARK_API_URL = "https://api.postmarkapp.com/email"
 DEFAULT_NOTIFICATION_SETTINGS = {
@@ -503,23 +507,38 @@ def request_text(
     data: bytes | None = None,
     headers: dict[str, str] | None = None,
     probe: "SourceProbe | None" = None,
+    retries: int = 0,
+    retry_delay: float = 2.0,
 ) -> str:
+    """`retries` applies only to a gateway answering for a server it could not reach
+    (502, 503, 504). Those say nothing about our request, and a source that answers
+    in two seconds on every other attempt is not down. Only the status of the final
+    attempt reaches the probe: the health rules take the worst status a run saw, so
+    recording a 504 we then recovered from would raise the incident anyway.
+    """
     merged_headers = dict(DEFAULT_HEADERS)
     if data is not None:
         merged_headers["Content-Type"] = "application/json"
     merged_headers.update(headers or {})
     req = request.Request(url, data=data, headers=merged_headers, method="POST" if data else "GET")
 
-    try:
-        with request.urlopen(req, timeout=30, context=SSL_CONTEXT) as response:
+    attempt = 0
+    while True:
+        try:
+            with request.urlopen(req, timeout=30, context=SSL_CONTEXT) as response:
+                if probe is not None:
+                    probe.record(http_status=getattr(response, "status", None) or response.getcode())
+                return response.read().decode("utf-8", errors="replace")
+        except error.HTTPError as exc:
+            if exc.code in TRANSIENT_HTTP_STATUSES and attempt < retries:
+                attempt += 1
+                print(f"[refresh] {url} answered HTTP {exc.code}, retry {attempt} of {retries}")
+                time.sleep(retry_delay * attempt)
+                continue
             if probe is not None:
-                probe.record(http_status=getattr(response, "status", None) or response.getcode())
-            return response.read().decode("utf-8", errors="replace")
-    except error.HTTPError as exc:
-        if probe is not None:
-            probe.record(http_status=exc.code)
-        body = exc.read().decode("utf-8", errors="replace")
-        raise RuntimeError(body or f"HTTP {exc.code}") from exc
+                probe.record(http_status=exc.code)
+            body = exc.read().decode("utf-8", errors="replace")
+            raise RuntimeError(body or f"HTTP {exc.code}") from exc
 
 
 def supabase_request(
@@ -567,7 +586,7 @@ def get_open_opportunities_from_db(limit: int = 200) -> list[dict[str, Any]]:
             "select": (
                 "id,source,source_item_id,canonical_key,matched_sources,title,organization,countries,deadline,type,link,"
                 "fit_score,fit_label,fit_reasons,action_status,action_reason,action_notes,action_taken_at,"
-                "status,first_seen_at,last_seen_at,last_synced_at"
+                "status,first_seen_at,last_seen_at,last_synced_at,raw_payload"
             ),
             "status": f"in.({','.join(sorted(OPEN_STATUSES))})",
             "order": "fit_score.desc,deadline.asc.nullslast,last_seen_at.desc",
@@ -588,7 +607,7 @@ def get_managed_opportunities_from_db(limit: int = 5000) -> list[dict[str, Any]]
             "select": (
                 "id,source,source_item_id,canonical_key,matched_sources,title,organization,countries,deadline,type,link,"
                 "fit_score,fit_label,fit_reasons,action_status,action_reason,action_notes,action_taken_at,"
-                "status,first_seen_at,last_seen_at,last_synced_at"
+                "status,first_seen_at,last_seen_at,last_synced_at,raw_payload"
             ),
             "source": in_filter(MANAGED_SOURCES),
             "order": "status.asc,action_taken_at.desc.nullslast,fit_score.desc,deadline.asc.nullslast,last_seen_at.desc",
@@ -1580,6 +1599,7 @@ def serialize_opportunity_row(row: dict[str, Any]) -> dict[str, Any]:
         "fitScore": row.get("fit_score") or 0,
         "fitLabel": row.get("fit_label") or "Low fit",
         "fitReasons": row.get("fit_reasons") or [],
+        "scopeVisible": bool((row.get("raw_payload") or {}).get("scopeVisible")),
         "fairpicturePosition": get_fairpicture_position(row.get("countries") or []),
         "clientWarmth": get_client_warmth(row.get("organization"), row.get("link")),
         "actionStatus": action_status,
@@ -1641,7 +1661,7 @@ def update_opportunity_action(
             "select": (
                 "id,source,source_item_id,canonical_key,matched_sources,title,organization,countries,deadline,type,link,"
                 "fit_score,fit_label,fit_reasons,action_status,action_reason,action_notes,action_taken_at,"
-                "status,first_seen_at,last_seen_at,last_synced_at"
+                "status,first_seen_at,last_seen_at,last_synced_at,raw_payload"
             ),
         },
         payload={
@@ -1698,7 +1718,7 @@ def to_db_row(item: dict[str, Any], synced_at: str) -> dict[str, Any]:
         "last_seen_at": synced_at,
         "last_synced_at": synced_at,
         "first_seen_at": synced_at,
-        "raw_payload": item,
+        "raw_payload": {**item, "scopeVisible": fit["scopeVisible"]},
     }
 
 
@@ -2231,6 +2251,7 @@ def fetch_reliefweb_jobs(appname: str, keywords: list[str], probe: SourceProbe |
                 "type": ", ".join(entry.get("name") for entry in types if entry.get("name")) or "Tender",
                 "link": fields.get("url") or build_reliefweb_alias(fields.get("url_alias")),
                 "source": "ReliefWeb",
+                "scope": fields.get("body") or "",
             }
         )
 
@@ -2538,6 +2559,7 @@ def fetch_icimod_announcements(keywords: list[str], probe: SourceProbe | None = 
                 ),
                 "link": link,
                 "source": "ICIMOD",
+                "scope": content,
             }
 
             if not record["title"]:
@@ -2644,10 +2666,9 @@ def fetch_save_the_children_tenders(keywords: list[str]) -> list[dict]:
             continue
         if record["deadline"] and not is_open_deadline(record["deadline"]):
             continue
-        content = record.get("_content", "")
+        content = record.get("scope", "")
         if not matches_keywords({**record, "type": f"{record['type']} {content}"}, keywords):
             continue
-        record.pop("_content", None)
         items.append(record)
 
     return items
@@ -2688,7 +2709,7 @@ def fetch_plan_international_tenders(
         if record["deadline"] and not is_open_deadline(record["deadline"]):
             continue
 
-        summary = record.pop("_summary", "")
+        summary = record.get("scope", "")
         if not matches_keywords({**record, "type": f"{record['type']} {summary}"}, keywords):
             continue
 
@@ -2751,7 +2772,7 @@ def fetch_caf_tenders(keywords: list[str], probe: SourceProbe | None = None) -> 
         if record["deadline"] and not is_open_deadline(record["deadline"]):
             continue
 
-        content = record.pop("_content", "")
+        content = record.get("scope", "")
         combined_type = f"{record['type']} {content}".strip()
         if not matches_keywords({**record, "type": combined_type}, keywords):
             continue
@@ -2812,7 +2833,7 @@ def parse_save_the_children_tender(url: str, html: str) -> dict[str, Any] | None
         "type": compact_space(f"Tender {reference}".strip()),
         "link": url,
         "source": "Save the Children",
-        "_content": content,
+        "scope": content,
     }
 
 
@@ -2846,7 +2867,7 @@ def parse_plan_international_tender(title: str, section_nodes: list[Any]) -> dic
         "type": compact_space(f"Tender {reference}".strip()),
         "link": link,
         "source": "Plan International",
-        "_summary": summary,
+        "scope": summary,
     }
 
 
@@ -2869,7 +2890,7 @@ def parse_caf_tender(url: str, html: str) -> dict[str, Any] | None:
         "type": tender_type,
         "link": url,
         "source": "CAF",
-        "_content": content,
+        "scope": content,
     }
 
 
@@ -3432,7 +3453,7 @@ def fetch_find_a_tender_notices(
 
         url = f"{FIND_A_TENDER_RELEASES_URL}?{parse.urlencode(page_query)}"
         try:
-            response = json.loads(request_text(url, probe=probe))
+            response = json.loads(request_text(url, probe=probe, retries=2))
         except Exception:
             # Losing the whole source because the rate limit bit on page four would
             # throw away three pages we already hold and report an outage that is not
@@ -3455,7 +3476,7 @@ def fetch_find_a_tender_notices(
             if not is_open_deadline(record["deadline"]):
                 continue
 
-            description = record.pop("_description", "")
+            description = record.get("scope", "")
             if not matches_keywords({**record, "type": f"{record['type']} {description}"}, keywords):
                 continue
 
@@ -3495,7 +3516,7 @@ def parse_find_a_tender_release(release: dict[str, Any]) -> dict[str, Any] | Non
         "type": find_a_tender_type(documents),
         "link": find_a_tender_link(documents, notice_id),
         "source": "Find a Tender",
-        "_description": compact_space(String(tender.get("description"))),
+        "scope": compact_space(String(tender.get("description"))),
     }
 
 
@@ -3563,6 +3584,8 @@ FIT_CLIENT_ORG_WEIGHT = 6
 FIT_INDIVIDUAL_PENALTY = 40
 FIT_HARDWARE_PENALTY = 45
 FIT_IT_PENALTY = 30
+FIT_CORPORATE_COMMS_PENALTY = 30
+FIT_FIELD_STORY_WEIGHT = 12
 
 FIT_VISUAL_TERMS = [
     "video",
@@ -3596,6 +3619,31 @@ FIT_MEDIA_TERMS = [
     "editorial",
     "visual content",
     "digital storytelling",
+]
+FIT_FIELD_STORY_TERMS = [
+    "documentary",
+    "photojournalism",
+    "visual storytelling",
+    "storytelling",
+    "field",
+    "beneficiar",
+    "impact stories",
+    "humanitarian",
+]
+FIT_CORPORATE_COMMS_TERMS = [
+    "explainer",
+    "launch",
+    "event",
+    "conference",
+    "branding",
+    "graphic design",
+    "social media",
+    "communication materials",
+    "promotion",
+    "campaign",
+    "broadcasting of",
+    "music video",
+    "press photography",
 ]
 FIT_PROCUREMENT_TERMS = [
     "rfp",
@@ -3720,6 +3768,7 @@ def build_fit_haystack(opportunity: dict[str, Any]) -> str:
                 String(opportunity.get("organization")),
                 String(opportunity.get("type")),
                 " ".join(opportunity.get("countryList") or []),
+                String(opportunity.get("scope")),
             ]
         )
     )
@@ -3733,8 +3782,28 @@ def matches_any_fit_term(haystack: str, terms: list[str]) -> bool:
     return any(matches_fit_term(haystack, term) for term in terms)
 
 
+def is_scope_visible(opportunity: dict[str, Any]) -> bool:
+    scope = normalize_lookup_key(String(opportunity.get("scope")))
+    if not scope:
+        return False
+
+    return not any(
+        phrase in scope
+        for phrase in (
+            "details in attachment",
+            "details are in attachment",
+            "see attachment",
+            "e sourcing",
+            "e sourcing portal",
+            "e procurement portal",
+            "login to",
+        )
+    )
+
+
 def get_fit_analysis(opportunity: dict[str, Any]) -> dict[str, Any]:
     haystack = build_fit_haystack(opportunity)
+    scope_visible = is_scope_visible(opportunity)
 
     score = FIT_BASE_SCORE
     reasons = ["Base Fairpicture fit score"]
@@ -3745,6 +3814,9 @@ def get_fit_analysis(opportunity: dict[str, Any]) -> dict[str, Any]:
     if matches_any_fit_term(haystack, FIT_MEDIA_TERMS):
         score += FIT_MEDIA_WEIGHT
         reasons.append("Related storytelling, communications, or media language")
+    if matches_any_fit_term(haystack, FIT_FIELD_STORY_TERMS):
+        score += FIT_FIELD_STORY_WEIGHT
+        reasons.append("Field storytelling, humanitarian, or documentary language")
     invites_proposals = matches_any_fit_term(haystack, FIT_PROCUREMENT_TERMS)
     addresses_a_vendor = matches_any_fit_term(haystack, FIT_AGENCY_TERMS)
     if invites_proposals:
@@ -3767,12 +3839,22 @@ def get_fit_analysis(opportunity: dict[str, Any]) -> dict[str, Any]:
     if matches_any_fit_term(haystack, FIT_IT_TERMS):
         score -= FIT_IT_PENALTY
         reasons.append("Penalty for website, CMS, software, or IT-style tender language")
+    if (
+        matches_any_fit_term(haystack, FIT_CORPORATE_COMMS_TERMS)
+        and not matches_any_fit_term(haystack, FIT_FIELD_STORY_TERMS)
+    ):
+        score -= FIT_CORPORATE_COMMS_PENALTY
+        reasons.append("Penalty for corporate communications, event, or promotional work rather than field storytelling")
 
     normalized = max(0, min(100, score))
+    if not scope_visible:
+        normalized = min(normalized, FIT_HIGH_SCORE - 1)
+        reasons.append("Scope not visible in the public notice")
     return {
         "score": normalized,
         "label": get_fit_label(normalized),
         "reasons": reasons,
+        "scopeVisible": scope_visible,
     }
 
 
