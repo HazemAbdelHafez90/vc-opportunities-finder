@@ -9,7 +9,7 @@ bs4_stub = types.ModuleType("bs4")
 bs4_stub.BeautifulSoup = object
 sys.modules.setdefault("bs4", bs4_stub)
 
-from api.export import ExportError, authenticate_export_token, build_query
+from api._export import ExportError, authenticate_export_token, build_query
 
 
 class ExportAuthTests(unittest.TestCase):
