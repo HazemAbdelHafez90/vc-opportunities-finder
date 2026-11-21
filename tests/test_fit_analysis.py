@@ -44,6 +44,9 @@ class FitTermMatchingTests(unittest.TestCase):
         self.assertTrue(matches_fit_term("tender rfps eois", "rfp"))
         self.assertTrue(matches_fit_term("request for firms", "firm"))
 
+    def test_phrase_terms_still_match(self):
+        self.assertTrue(matches_fit_term("video and communication materials", "communication materials"))
+
 
 class FitHaystackTests(unittest.TestCase):
     def test_accents_and_punctuation_are_normalized(self):
@@ -118,6 +121,23 @@ class FitScoreTests(unittest.TestCase):
 
         self.assertGreaterEqual(result["score"], FIT_MEDIUM_SCORE)
         self.assertLess(result["score"], FIT_HIGH_SCORE)
+
+    def test_corporate_comms_title_without_field_storytelling_does_not_reach_high_fit(self):
+        result = get_fit_analysis(
+            opportunity(
+                "Video production and communication materials for the launch of the GNJEEP tool in Ukraine",
+                "ILO CO-Kyiv",
+                "Request for quotation",
+                countries=["Ukraine"],
+            )
+        )
+
+        self.assertLess(result["score"], FIT_HIGH_SCORE)
+        self.assertEqual(result["label"], "Medium fit")
+        self.assertIn(
+            "Penalty for corporate communications, event, or promotional work rather than field storytelling",
+            result["reasons"],
+        )
 
     def test_an_unrelated_notice_scores_at_the_floor(self):
         self.assertLess(score("Instructional Design and E-Learning Consultancy"), FIT_MEDIUM_SCORE)

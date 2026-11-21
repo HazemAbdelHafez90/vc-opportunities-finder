@@ -3581,6 +3581,7 @@ FIT_CLIENT_ORG_WEIGHT = 6
 FIT_INDIVIDUAL_PENALTY = 40
 FIT_HARDWARE_PENALTY = 45
 FIT_IT_PENALTY = 30
+FIT_CORPORATE_COMMS_PENALTY = 30
 
 FIT_VISUAL_TERMS = [
     "video",
@@ -3614,6 +3615,31 @@ FIT_MEDIA_TERMS = [
     "editorial",
     "visual content",
     "digital storytelling",
+]
+FIT_FIELD_STORY_TERMS = [
+    "documentary",
+    "photojournalism",
+    "visual storytelling",
+    "storytelling",
+    "field",
+    "beneficiar",
+    "impact stories",
+    "humanitarian",
+]
+FIT_CORPORATE_COMMS_TERMS = [
+    "explainer",
+    "launch",
+    "event",
+    "conference",
+    "branding",
+    "graphic design",
+    "social media",
+    "communication materials",
+    "promotion",
+    "campaign",
+    "broadcasting of",
+    "music video",
+    "press photography",
 ]
 FIT_PROCUREMENT_TERMS = [
     "rfp",
@@ -3785,6 +3811,12 @@ def get_fit_analysis(opportunity: dict[str, Any]) -> dict[str, Any]:
     if matches_any_fit_term(haystack, FIT_IT_TERMS):
         score -= FIT_IT_PENALTY
         reasons.append("Penalty for website, CMS, software, or IT-style tender language")
+    if (
+        matches_any_fit_term(haystack, FIT_CORPORATE_COMMS_TERMS)
+        and not matches_any_fit_term(haystack, FIT_FIELD_STORY_TERMS)
+    ):
+        score -= FIT_CORPORATE_COMMS_PENALTY
+        reasons.append("Penalty for corporate communications, event, or promotional work rather than field storytelling")
 
     normalized = max(0, min(100, score))
     return {
