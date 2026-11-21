@@ -529,6 +529,7 @@ def supabase_request(
     query: dict[str, str] | None = None,
     payload: Any = None,
     prefer: str | None = None,
+    timeout: int = 30,
 ) -> Any:
     supabase_url, service_role_key = get_supabase_env()
     encoded_query = ""
@@ -550,7 +551,7 @@ def supabase_request(
 
     req = request.Request(url, data=data, headers=headers, method=method.upper())
     try:
-        with request.urlopen(req, timeout=30, context=SSL_CONTEXT) as response:
+        with request.urlopen(req, timeout=timeout, context=SSL_CONTEXT) as response:
             body = response.read().decode("utf-8")
             return json.loads(body) if body else None
     except error.HTTPError as exc:

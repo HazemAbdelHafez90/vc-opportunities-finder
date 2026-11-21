@@ -31,6 +31,8 @@ Frontend:
 API routes:
 - `api/opportunities.py`
   reads cached open rows from Supabase
+- `api/export.py`
+  token-secured, read-only export for scripts and analysis
 - `api/sync-status.py`
   returns the latest sync metadata
 - `api/refresh.py`
@@ -166,6 +168,17 @@ vercel dev
 ```
 
 Then open the local URL Vercel prints.
+
+## Machine export API
+
+`GET /api/export` returns all tender history, including expired, stale, and retired-source rows. It is not a browser API: use `Authorization: Bearer TOKEN`, and configure `EXPORT_API_TOKEN_SHA256S` with one or more comma-separated SHA-256 token digests. Generate a token with `openssl rand -hex 32`, then hash it with `printf '%s' "$TOKEN" | shasum -a 256` before setting the hash in Vercel.
+
+Optional parameters: `status`, `source`, `fit`, `min_score`, `action_status`, `country`, `organization`, `q`, `deadline_from`, `deadline_to`, `first_seen_from`, `first_seen_to`, `updated_since`, `id`, `include_raw=1`, `limit` (max 500), and `offset`. Responses include `items`, page metadata, and `generated_at`; raw source payloads are omitted unless explicitly requested. Put a Vercel Firewall rate-limit rule on `/api/export`.
+
+```bash
+curl -H "Authorization: Bearer REPLACE_WITH_TOKEN" \
+  'https://YOUR_PROJECT.vercel.app/api/export?status=open,expired&limit=200'
+```
 
 If you only run a static file server, the frontend will load but the API routes will not behave like production.
 

@@ -1,17 +1,23 @@
 from __future__ import annotations
 
 import json
+from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler
 from urllib import parse
 
-from api._lib import AuthError, get_authenticated_user, get_managed_opportunities_from_db
+from api._lib import AuthError, get_authenticated_user, get_managed_opportunities_from_db, supabase_request
+from api._export import ExportError, authenticate_export_token, build_query, one
 
 
 class handler(BaseHTTPRequestHandler):
     def do_GET(self):
         try:
+            params = parse.parse_qs(parse.urlparse(self.path).query, keep_blank_values=True)
+            if params.get("export") == ["1"]:
+                self.write_export(params)
+                return
             get_authenticated_user(self.headers)
-            bucket = parse.parse_qs(parse.urlparse(self.path).query).get("bucket", ["all"])[0]
+            bucket = params.get("bucket", ["all"])[0]
             items = filter_items_by_bucket(get_managed_opportunities_from_db(), bucket)
             self.write_json(
                 {"items": items},
@@ -19,6 +25,34 @@ class handler(BaseHTTPRequestHandler):
             )
         except AuthError as exc:
             self.write_json({"error": str(exc)}, status=401, cache_control="no-store")
+        except Exception as exc:  # pragma: no cover
+            self.write_json({"error": str(exc)}, status=502, cache_control="no-store")
+
+    def write_export(self, params: dict[str, list[str]]):
+        try:
+            if "token" in params:
+                raise PermissionError("Unauthorized")
+            token_position = authenticate_export_token(self.headers)
+            query, _, limit, offset = build_query(params)
+            rows = supabase_request("GET", "opportunities", query=query, timeout=10) or []
+            if one(params, "id") and not rows:
+                self.write_json({"error": "Not found."}, status=404, cache_control="no-store")
+                return
+            print(f"[export] token={token_position} filters={sorted(params)} returned={len(rows)}")
+            self.write_json(
+                {
+                    "items": rows,
+                    "page": {"limit": limit, "offset": offset, "returned": len(rows)},
+                    "generated_at": datetime.now(timezone.utc).isoformat(),
+                },
+                cache_control="no-store",
+            )
+        except RuntimeError as exc:
+            self.write_json({"error": str(exc)}, status=503, cache_control="no-store")
+        except PermissionError:
+            self.write_json({"error": "Unauthorized"}, status=401, cache_control="no-store")
+        except ExportError as exc:
+            self.write_json({"error": str(exc)}, status=400, cache_control="no-store")
         except Exception as exc:  # pragma: no cover
             self.write_json({"error": str(exc)}, status=502, cache_control="no-store")
 

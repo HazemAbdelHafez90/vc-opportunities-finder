@@ -12,5 +12,11 @@
       "path": "/api/cron-refresh",
       "schedule": "0 6 * * *"
     }
+  ],
+  "rewrites": [
+    {
+      "source": "/api/export",
+      "destination": "/api/opportunities?export=1"
+    }
   ]
 }
