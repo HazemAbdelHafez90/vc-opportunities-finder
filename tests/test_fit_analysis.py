@@ -15,14 +15,17 @@ from api._lib import (
 )
 
 
-def opportunity(title, organization="", notice_type="", source="UNGM", countries=None):
-    return {
+def opportunity(title, organization="", notice_type="", source="UNGM", countries=None, scope=None):
+    item = {
         "title": title,
         "organization": organization,
         "type": notice_type,
         "source": source,
         "countryList": countries or [],
     }
+    if scope is not None:
+        item["scope"] = scope
+    return item
 
 
 def score(title, **kwargs):
@@ -65,7 +68,11 @@ class FitHaystackTests(unittest.TestCase):
 class FitScoreTests(unittest.TestCase):
     def test_an_agency_tender_for_visual_work_reaches_high_fit(self):
         result = get_fit_analysis(
-            opportunity("RFP: Media Production Firm for the Audiovisual Documentation of Impact", "UNDP")
+            opportunity(
+                "RFP: Media Production Firm for the Audiovisual Documentation of Impact",
+                "UNDP",
+                scope="Documentary interviews with project participants in the field.",
+            )
         )
 
         self.assertGreaterEqual(result["score"], FIT_HIGH_SCORE)
@@ -87,6 +94,7 @@ class FitScoreTests(unittest.TestCase):
             opportunity(
                 "RFQ - Production of Documentary-Style Video Profiles for projects working on infrastructure",
                 "ILO",
+                scope="The supplier will document field projects and beneficiaries.",
             )
         )
 
@@ -105,7 +113,11 @@ class FitScoreTests(unittest.TestCase):
 
     def test_long_term_agreements_are_credited_as_procurement(self):
         result = get_fit_analysis(
-            opportunity("Provision of LTA for Videography and Photography Service Provider", "UNDP")
+            opportunity(
+                "Provision of LTA for Videography and Photography Service Provider",
+                "UNDP",
+                scope="Photography and documentary video production across field offices.",
+            )
         )
 
         self.assertIn("Proposals, quotations, or a framework are invited", result["reasons"])
@@ -144,6 +156,7 @@ class FitScoreTests(unittest.TestCase):
             opportunity(
                 "RFP for documentary storytelling at the campaign launch",
                 "UNHCR",
+                scope="Documentary production with displaced communities in the field.",
             )
         )
 
@@ -157,6 +170,62 @@ class FitScoreTests(unittest.TestCase):
 
     def test_an_unrelated_notice_scores_at_the_floor(self):
         self.assertLess(score("Instructional Design and E-Learning Consultancy"), FIT_MEDIUM_SCORE)
+
+    def test_reference_scores_keep_expected_labels(self):
+        ilo = get_fit_analysis(
+            opportunity(
+                "Video production and communication materials for the launch of the GNJEEP tool in Ukraine",
+                "ILO CO-Kyiv",
+                "Request for quotation",
+                countries=["Ukraine"],
+            )
+        )
+        unhcr = get_fit_analysis(
+            opportunity(
+                "Documentary photography and storytelling on displaced communities",
+                "UNHCR",
+                "Request for proposal",
+                countries=["South Sudan"],
+                scope="Documentary photography and field storytelling with displaced communities.",
+            )
+        )
+        zurich = get_fit_analysis(
+            opportunity(
+                "Motion picture and video tape production and related services – Erklärvideos für die Abstimmungsinformationen der Stadt Zürich",
+                "Stadtkanzlei Zürich",
+                "Contract notice",
+                countries=["Switzerland"],
+            )
+        )
+
+        self.assertEqual((ilo["score"], ilo["label"]), (44, "Medium fit"))
+        self.assertEqual((unhcr["score"], unhcr["label"]), (92, "High fit"))
+        self.assertEqual((zurich["score"], zurich["label"]), (42, "Medium fit"))
+
+    def test_scope_unverified_never_returns_high_fit(self):
+        result = get_fit_analysis(
+            opportunity(
+                "RFP for documentary photography and visual storytelling",
+                "UNHCR",
+            )
+        )
+
+        self.assertEqual(result["score"], FIT_HIGH_SCORE - 1)
+        self.assertEqual(result["label"], "Medium fit")
+        self.assertFalse(result["scopeVisible"])
+        self.assertIn("Scope not visible in the public notice", result["reasons"])
+
+    def test_e_sourcing_only_scope_is_not_visible(self):
+        result = get_fit_analysis(
+            opportunity(
+                "RFP for documentary photography and visual storytelling",
+                "UNHCR",
+                scope="Full details are available in the e-Sourcing portal.",
+            )
+        )
+
+        self.assertFalse(result["scopeVisible"])
+        self.assertEqual(result["score"], FIT_HIGH_SCORE - 1)
 
     def test_scores_stay_inside_the_scale(self):
         best = score(

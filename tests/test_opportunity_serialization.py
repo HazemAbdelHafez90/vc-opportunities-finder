@@ -23,6 +23,7 @@ class OpportunitySerializationTests(unittest.TestCase):
             "fit_score": 88,
             "fit_label": "High fit",
             "fit_reasons": ["Strong photography, videography, documentary, or multimedia keywords"],
+            "raw_payload": {"scopeVisible": False},
             "action_status": None,
             "action_reason": None,
             "action_notes": None,
@@ -36,6 +37,7 @@ class OpportunitySerializationTests(unittest.TestCase):
 
         self.assertEqual(result["fitScore"], 88)
         self.assertEqual(result["fitLabel"], "High fit")
+        self.assertFalse(result["scopeVisible"])
         self.assertEqual(result["fairpicturePosition"]["label"], "Strong position")
         self.assertEqual(result["fairpicturePosition"]["tone"], "strong")
         self.assertIn("Kenya has 1 project in 2026", result["fairpicturePosition"]["summary"])

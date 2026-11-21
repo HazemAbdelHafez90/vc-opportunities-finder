@@ -585,7 +585,7 @@ def get_open_opportunities_from_db(limit: int = 200) -> list[dict[str, Any]]:
             "select": (
                 "id,source,source_item_id,canonical_key,matched_sources,title,organization,countries,deadline,type,link,"
                 "fit_score,fit_label,fit_reasons,action_status,action_reason,action_notes,action_taken_at,"
-                "status,first_seen_at,last_seen_at,last_synced_at"
+                "status,first_seen_at,last_seen_at,last_synced_at,raw_payload"
             ),
             "status": f"in.({','.join(sorted(OPEN_STATUSES))})",
             "order": "fit_score.desc,deadline.asc.nullslast,last_seen_at.desc",
@@ -606,7 +606,7 @@ def get_managed_opportunities_from_db(limit: int = 5000) -> list[dict[str, Any]]
             "select": (
                 "id,source,source_item_id,canonical_key,matched_sources,title,organization,countries,deadline,type,link,"
                 "fit_score,fit_label,fit_reasons,action_status,action_reason,action_notes,action_taken_at,"
-                "status,first_seen_at,last_seen_at,last_synced_at"
+                "status,first_seen_at,last_seen_at,last_synced_at,raw_payload"
             ),
             "source": in_filter(MANAGED_SOURCES),
             "order": "status.asc,action_taken_at.desc.nullslast,fit_score.desc,deadline.asc.nullslast,last_seen_at.desc",
@@ -1598,6 +1598,7 @@ def serialize_opportunity_row(row: dict[str, Any]) -> dict[str, Any]:
         "fitScore": row.get("fit_score") or 0,
         "fitLabel": row.get("fit_label") or "Low fit",
         "fitReasons": row.get("fit_reasons") or [],
+        "scopeVisible": bool((row.get("raw_payload") or {}).get("scopeVisible")),
         "fairpicturePosition": get_fairpicture_position(row.get("countries") or []),
         "clientWarmth": get_client_warmth(row.get("organization"), row.get("link")),
         "actionStatus": action_status,
@@ -1659,7 +1660,7 @@ def update_opportunity_action(
             "select": (
                 "id,source,source_item_id,canonical_key,matched_sources,title,organization,countries,deadline,type,link,"
                 "fit_score,fit_label,fit_reasons,action_status,action_reason,action_notes,action_taken_at,"
-                "status,first_seen_at,last_seen_at,last_synced_at"
+                "status,first_seen_at,last_seen_at,last_synced_at,raw_payload"
             ),
         },
         payload={
@@ -1716,7 +1717,7 @@ def to_db_row(item: dict[str, Any], synced_at: str) -> dict[str, Any]:
         "last_seen_at": synced_at,
         "last_synced_at": synced_at,
         "first_seen_at": synced_at,
-        "raw_payload": item,
+        "raw_payload": {**item, "scopeVisible": fit["scopeVisible"]},
     }
 
 
@@ -2249,6 +2250,7 @@ def fetch_reliefweb_jobs(appname: str, keywords: list[str], probe: SourceProbe |
                 "type": ", ".join(entry.get("name") for entry in types if entry.get("name")) or "Tender",
                 "link": fields.get("url") or build_reliefweb_alias(fields.get("url_alias")),
                 "source": "ReliefWeb",
+                "scope": fields.get("body") or "",
             }
         )
 
@@ -2556,6 +2558,7 @@ def fetch_icimod_announcements(keywords: list[str], probe: SourceProbe | None = 
                 ),
                 "link": link,
                 "source": "ICIMOD",
+                "scope": content,
             }
 
             if not record["title"]:
@@ -2662,10 +2665,9 @@ def fetch_save_the_children_tenders(keywords: list[str]) -> list[dict]:
             continue
         if record["deadline"] and not is_open_deadline(record["deadline"]):
             continue
-        content = record.get("_content", "")
+        content = record.get("scope", "")
         if not matches_keywords({**record, "type": f"{record['type']} {content}"}, keywords):
             continue
-        record.pop("_content", None)
         items.append(record)
 
     return items
@@ -2706,7 +2708,7 @@ def fetch_plan_international_tenders(
         if record["deadline"] and not is_open_deadline(record["deadline"]):
             continue
 
-        summary = record.pop("_summary", "")
+        summary = record.get("scope", "")
         if not matches_keywords({**record, "type": f"{record['type']} {summary}"}, keywords):
             continue
 
@@ -2769,7 +2771,7 @@ def fetch_caf_tenders(keywords: list[str], probe: SourceProbe | None = None) -> 
         if record["deadline"] and not is_open_deadline(record["deadline"]):
             continue
 
-        content = record.pop("_content", "")
+        content = record.get("scope", "")
         combined_type = f"{record['type']} {content}".strip()
         if not matches_keywords({**record, "type": combined_type}, keywords):
             continue
@@ -2830,7 +2832,7 @@ def parse_save_the_children_tender(url: str, html: str) -> dict[str, Any] | None
         "type": compact_space(f"Tender {reference}".strip()),
         "link": url,
         "source": "Save the Children",
-        "_content": content,
+        "scope": content,
     }
 
 
@@ -2864,7 +2866,7 @@ def parse_plan_international_tender(title: str, section_nodes: list[Any]) -> dic
         "type": compact_space(f"Tender {reference}".strip()),
         "link": link,
         "source": "Plan International",
-        "_summary": summary,
+        "scope": summary,
     }
 
 
@@ -2887,7 +2889,7 @@ def parse_caf_tender(url: str, html: str) -> dict[str, Any] | None:
         "type": tender_type,
         "link": url,
         "source": "CAF",
-        "_content": content,
+        "scope": content,
     }
 
 
@@ -3473,7 +3475,7 @@ def fetch_find_a_tender_notices(
             if not is_open_deadline(record["deadline"]):
                 continue
 
-            description = record.pop("_description", "")
+            description = record.get("scope", "")
             if not matches_keywords({**record, "type": f"{record['type']} {description}"}, keywords):
                 continue
 
@@ -3513,7 +3515,7 @@ def parse_find_a_tender_release(release: dict[str, Any]) -> dict[str, Any] | Non
         "type": find_a_tender_type(documents),
         "link": find_a_tender_link(documents, notice_id),
         "source": "Find a Tender",
-        "_description": compact_space(String(tender.get("description"))),
+        "scope": compact_space(String(tender.get("description"))),
     }
 
 
@@ -3765,6 +3767,7 @@ def build_fit_haystack(opportunity: dict[str, Any]) -> str:
                 String(opportunity.get("organization")),
                 String(opportunity.get("type")),
                 " ".join(opportunity.get("countryList") or []),
+                String(opportunity.get("scope")),
             ]
         )
     )
@@ -3778,8 +3781,28 @@ def matches_any_fit_term(haystack: str, terms: list[str]) -> bool:
     return any(matches_fit_term(haystack, term) for term in terms)
 
 
+def is_scope_visible(opportunity: dict[str, Any]) -> bool:
+    scope = normalize_lookup_key(String(opportunity.get("scope")))
+    if not scope:
+        return False
+
+    return not any(
+        phrase in scope
+        for phrase in (
+            "details in attachment",
+            "details are in attachment",
+            "see attachment",
+            "e sourcing",
+            "e sourcing portal",
+            "e procurement portal",
+            "login to",
+        )
+    )
+
+
 def get_fit_analysis(opportunity: dict[str, Any]) -> dict[str, Any]:
     haystack = build_fit_haystack(opportunity)
+    scope_visible = is_scope_visible(opportunity)
 
     score = FIT_BASE_SCORE
     reasons = ["Base Fairpicture fit score"]
@@ -3823,10 +3846,14 @@ def get_fit_analysis(opportunity: dict[str, Any]) -> dict[str, Any]:
         reasons.append("Penalty for corporate communications, event, or promotional work rather than field storytelling")
 
     normalized = max(0, min(100, score))
+    if not scope_visible:
+        normalized = min(normalized, FIT_HIGH_SCORE - 1)
+        reasons.append("Scope not visible in the public notice")
     return {
         "score": normalized,
         "label": get_fit_label(normalized),
         "reasons": reasons,
+        "scopeVisible": scope_visible,
     }
 
 
