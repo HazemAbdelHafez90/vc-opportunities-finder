@@ -139,6 +139,22 @@ class FitScoreTests(unittest.TestCase):
             result["reasons"],
         )
 
+    def test_field_storytelling_outweighs_a_corporate_term(self):
+        result = get_fit_analysis(
+            opportunity(
+                "RFP for documentary storytelling at the campaign launch",
+                "UNHCR",
+            )
+        )
+
+        # Field-storytelling terms earn their boost and suppress the corporate-comms penalty.
+        self.assertIn("Field storytelling, humanitarian, or documentary language", result["reasons"])
+        self.assertNotIn(
+            "Penalty for corporate communications, event, or promotional work rather than field storytelling",
+            result["reasons"],
+        )
+        self.assertGreaterEqual(result["score"], FIT_HIGH_SCORE)
+
     def test_an_unrelated_notice_scores_at_the_floor(self):
         self.assertLess(score("Instructional Design and E-Learning Consultancy"), FIT_MEDIUM_SCORE)
 

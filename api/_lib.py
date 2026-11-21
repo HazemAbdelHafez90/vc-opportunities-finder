@@ -3582,6 +3582,7 @@ FIT_INDIVIDUAL_PENALTY = 40
 FIT_HARDWARE_PENALTY = 45
 FIT_IT_PENALTY = 30
 FIT_CORPORATE_COMMS_PENALTY = 30
+FIT_FIELD_STORY_WEIGHT = 12
 
 FIT_VISUAL_TERMS = [
     "video",
@@ -3789,6 +3790,9 @@ def get_fit_analysis(opportunity: dict[str, Any]) -> dict[str, Any]:
     if matches_any_fit_term(haystack, FIT_MEDIA_TERMS):
         score += FIT_MEDIA_WEIGHT
         reasons.append("Related storytelling, communications, or media language")
+    if matches_any_fit_term(haystack, FIT_FIELD_STORY_TERMS):
+        score += FIT_FIELD_STORY_WEIGHT
+        reasons.append("Field storytelling, humanitarian, or documentary language")
     invites_proposals = matches_any_fit_term(haystack, FIT_PROCUREMENT_TERMS)
     addresses_a_vendor = matches_any_fit_term(haystack, FIT_AGENCY_TERMS)
     if invites_proposals:
