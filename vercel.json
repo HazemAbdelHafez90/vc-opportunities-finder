@@ -5,6 +5,9 @@
     },
     "api/refresh.py": {
       "maxDuration": 300
+    },
+    "api/re-evaluate.py": {
+      "maxDuration": 300
     }
   },
   "crons": [

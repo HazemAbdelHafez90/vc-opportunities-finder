@@ -475,6 +475,20 @@
             <p id="insights-status" class="insights-status">Loading insights.</p>
 
             <div id="insights-body" class="insights-body" hidden>
+              <section class="insights-block" aria-labelledby="reevaluate-title">
+                <div class="insights-block__head reevaluate-head">
+                  <div>
+                    <h3 id="reevaluate-title">Re-evaluate stored opportunities</h3>
+                    <p class="insights-block__note">
+                      Apply the current fit rules to every opportunity on record, then compare its old and new score.
+                    </p>
+                  </div>
+                  <button id="reevaluate-button" class="primary-button primary-button--small" type="button">Re-score all opportunities</button>
+                </div>
+                <p id="reevaluate-status" class="insights-status reevaluate-status" hidden aria-live="polite"></p>
+                <div id="reevaluate-results" class="reevaluate-results" hidden></div>
+              </section>
+
               <section class="insights-block" aria-labelledby="insights-funnel-title">
                 <div class="insights-block__head">
                   <h3 id="insights-funnel-title">Our funnel</h3>

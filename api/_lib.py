@@ -617,6 +617,94 @@ def get_managed_opportunities_from_db(limit: int = 5000) -> list[dict[str, Any]]
     return [serialize_opportunity_row(row) for row in rows]
 
 
+def reevaluate_managed_opportunities() -> dict[str, Any]:
+    """Re-score every stored managed opportunity with the current fit rules."""
+    stored_rows: list[dict[str, Any]] = []
+    page_size = 500
+    offset = 0
+    while True:
+        page = supabase_request(
+            "GET",
+            "opportunities",
+            query={
+                "select": (
+                    "id,source,title,organization,countries,deadline,type,link,matched_sources,fit_score,fit_label,"
+                    "fit_reasons,action_status,action_reason,action_notes,action_taken_at,status,first_seen_at,"
+                    "last_synced_at,raw_payload"
+                ),
+                "source": in_filter(MANAGED_SOURCES),
+                "order": "id.asc",
+                "limit": str(page_size),
+                "offset": str(offset),
+            },
+        ) or []
+        stored_rows.extend(page)
+        if len(page) < page_size:
+            break
+        offset += page_size
+
+    updates_by_fit: dict[tuple[int, str, tuple[str, ...]], list[str]] = {}
+    results = []
+    changed_count = 0
+    for row in stored_rows:
+        raw = row.get("raw_payload") if isinstance(row.get("raw_payload"), dict) else {}
+        fit_input = {
+            **raw,
+            "title": row.get("title") or raw.get("title"),
+            "organization": row.get("organization") or raw.get("organization"),
+            "type": row.get("type") or raw.get("type"),
+            "countryList": raw.get("countryList") or row.get("countries") or [],
+            "scope": raw.get("scope") or "",
+        }
+        fit = get_fit_analysis(fit_input)
+        old_score = int(row.get("fit_score") or 0)
+        old_label = row.get("fit_label") or "Low fit"
+        old_reasons = row.get("fit_reasons") or []
+        reasons = tuple(fit["reasons"])
+        key = (fit["score"], fit["label"], reasons)
+        updates_by_fit.setdefault(key, []).append(row["id"])
+        is_changed = (
+            old_score != fit["score"]
+            or old_label != fit["label"]
+            or list(old_reasons) != list(reasons)
+        )
+        changed_count += int(is_changed)
+        serialized_row = {
+            **row,
+            "fit_score": fit["score"],
+            "fit_label": fit["label"],
+            "fit_reasons": list(reasons),
+        }
+        item = serialize_opportunity_row(serialized_row)
+        item["previousFitScore"] = old_score
+        item["previousFitLabel"] = old_label
+        item["fitScoreChange"] = fit["score"] - old_score
+        item["fitChanged"] = is_changed
+        results.append(item)
+
+    for (score, label, reasons), opportunity_ids in updates_by_fit.items():
+        for start in range(0, len(opportunity_ids), 100):
+            supabase_request(
+                "PATCH",
+                "opportunities",
+                query={"id": in_filter(opportunity_ids[start : start + 100], quote=False)},
+                payload={
+                    "fit_score": score,
+                    "fit_label": label,
+                    "fit_reasons": list(reasons),
+                },
+                prefer="return=minimal",
+            )
+
+    results.sort(key=lambda item: (-item["fitScore"], item["title"].lower()))
+    return {
+        "count": len(results),
+        "changedCount": changed_count,
+        "unchangedCount": len(results) - changed_count,
+        "items": results,
+    }
+
+
 def get_latest_sync_run() -> dict[str, Any] | None:
     rows = supabase_request(
         "GET",

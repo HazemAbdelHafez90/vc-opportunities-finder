@@ -62,6 +62,9 @@ const insightsViewButton = document.querySelector("#view-insights");
 const deskView = document.querySelector("#desk-view");
 const insightsPanel = document.querySelector("#panel-insights");
 const insightsStatus = document.querySelector("#insights-status");
+const reevaluateButton = document.querySelector("#reevaluate-button");
+const reevaluateStatus = document.querySelector("#reevaluate-status");
+const reevaluateResults = document.querySelector("#reevaluate-results");
 const insightsBody = document.querySelector("#insights-body");
 const insightsFunnel = document.querySelector("#insights-funnel");
 const insightsFunnelLeak = document.querySelector("#insights-funnel-leak");
@@ -209,6 +212,7 @@ pendingTab.addEventListener("click", () => setActiveTab("pending"));
 appliedTab.addEventListener("click", () => setActiveTab("applied"));
 missedTab.addEventListener("click", () => setActiveTab("missed"));
 deskViewButton.addEventListener("click", () => setActiveTab(lastDeskTab));
+reevaluateButton.addEventListener("click", handleReevaluateHistory);
 insightsViewButton.addEventListener("click", () => setActiveTab("insights"));
 insightsMarketToggles.forEach((button) => {
   button.addEventListener("click", () => {
@@ -3005,6 +3009,68 @@ async function loadInsights() {
     insightsStatus.textContent = error.message || "Could not load insights.";
     throw error;
   }
+}
+
+async function handleReevaluateHistory() {
+  reevaluateButton.disabled = true;
+  reevaluateButton.textContent = "Re-scoring…";
+  reevaluateStatus.hidden = false;
+  reevaluateStatus.dataset.tone = "loading";
+  reevaluateStatus.textContent = "Applying the current fit rules to every stored opportunity.";
+  reevaluateResults.hidden = true;
+
+  try {
+    const response = await fetchWithAuth("/api/re-evaluate", { method: "POST" });
+    const data = await response.json().catch(() => null);
+    if (!response.ok) {
+      throw new Error(data?.error || "Could not re-evaluate stored opportunities.");
+    }
+
+    const items = Array.isArray(data?.items) ? data.items : [];
+    reevaluateStatus.dataset.tone = "success";
+    reevaluateStatus.textContent = `Re-evaluated ${data.count} opportunities. ${data.changedCount} changed and ${data.unchangedCount} stayed the same.`;
+    reevaluateResults.innerHTML = renderReevaluationResults(items);
+    reevaluateResults.hidden = items.length === 0;
+    insightsDataset = null;
+  } catch (error) {
+    reevaluateStatus.dataset.tone = "error";
+    reevaluateStatus.textContent = error.message || "Could not re-evaluate stored opportunities.";
+  } finally {
+    reevaluateButton.disabled = false;
+    reevaluateButton.textContent = "Re-score all opportunities";
+  }
+}
+
+function renderReevaluationResults(items) {
+  if (!items.length) {
+    return "";
+  }
+  const rows = items.map((item) => {
+    const change = Number(item.fitScoreChange) || 0;
+    const changeLabel = change > 0 ? `+${change}` : String(change);
+    const reasons = (Array.isArray(item.fitReasons) ? item.fitReasons : [])
+      .map((reason) => escapeHtml(reason))
+      .join(" · ");
+    const title = escapeHtml(getOpportunityDisplayTitle(item));
+    const organization = escapeHtml(item.organization || "N/A");
+    const oldFit = `${Number(item.previousFitScore) || 0}%`;
+    const newFit = `${Number(item.fitScore) || 0}%`;
+    const titleContent = item.link
+      ? `<a href="${escapeAttribute(item.link)}" target="_blank" rel="noreferrer">${title}</a>`
+      : title;
+    return `<tr>
+      <td><span class="fit-badge fit-badge--${getFitTone(Number(item.fitScore) || 0)}">${newFit}</span></td>
+      <td>${oldFit}</td>
+      <td class="reevaluate-change${change > 0 ? " is-up" : change < 0 ? " is-down" : ""}">${changeLabel}</td>
+      <td><strong>${titleContent}</strong><small>${organization}</small></td>
+      <td>${reasons}</td>
+    </tr>`;
+  }).join("");
+  return `<div class="reevaluate-results__summary">Sorted by the new fit score. Scores are saved to the opportunity records.</div>
+    <div class="reevaluate-results__scroll"><table class="reevaluate-table">
+      <thead><tr><th>New fit</th><th>Old fit</th><th>Change</th><th>Opportunity</th><th>Why it scored this way</th></tr></thead>
+      <tbody>${rows}</tbody>
+    </table></div>`;
 }
 
 function renderInsights() {
