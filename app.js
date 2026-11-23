@@ -144,7 +144,7 @@ const viewCardsButton = document.querySelector("#view-cards");
 const themeLightButton = document.querySelector("#theme-light");
 const themeDarkButton = document.querySelector("#theme-dark");
 const toast = document.querySelector("#toast");
-const DISPLAY_SOURCES = ["ReliefWeb", "UNDP Procurement", "UNGM", "Welthungerhilfe", "Plan International", "CAF", "TED", "Find a Tender"];
+const DISPLAY_SOURCES = ["ReliefWeb", "UNDP Procurement", "UNGM", "Welthungerhilfe", "Plan International", "CAF", "TED", "Find a Tender", "EEAS", "Fairtrade International"];
 const STORAGE_KEYS = {
   theme: "fairpicture-opportunities-theme",
   view: "fairpicture-opportunities-view",

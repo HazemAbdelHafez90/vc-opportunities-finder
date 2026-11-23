@@ -40,6 +40,8 @@ TED_SEARCH_URL = "https://api.ted.europa.eu/v3/notices/search"
 TED_NOTICE_PAGE_URL = "https://ted.europa.eu/en/notice/-/detail"
 FIND_A_TENDER_RELEASES_URL = "https://www.find-tender.service.gov.uk/api/1.0/ocdsReleasePackages"
 FIND_A_TENDER_NOTICE_PAGE_URL = "https://www.find-tender.service.gov.uk/Notice"
+EEAS_TENDERS_URL = "https://www.eeas.europa.eu/eeas/tenders_en"
+FAIRTRADE_OPPORTUNITIES_URL = "https://www.fairtrade.net/en/about/opportunities.html"
 CAF_TENDER_INDEX_URLS = [
     "https://www.cafonline.com/inside-caf/about-us/tenders/tenders-tab/",
     "https://www.cafonline.com/en/inside-caf/about-us/tenders/tenders-tab/",
@@ -80,6 +82,8 @@ MANAGED_SOURCES = [
     "CAF",
     "TED",
     "Find a Tender",
+    "EEAS",
+    "Fairtrade International",
 ]
 
 # Retired: still shown, no longer fetched. ICIMOD contributed one tender in eight
@@ -99,6 +103,8 @@ SOURCE_PRIORITY = {
     "CAF": 7,
     "TED": 8,
     "Find a Tender": 9,
+    "EEAS": 10,
+    "Fairtrade International": 11,
 }
 # A gateway answering for a server it could not reach -- not an answer about our
 # request, and worth one more attempt before calling the source down.
@@ -2175,6 +2181,8 @@ def fetch_live_items(appname: str, keywords: list[str]) -> tuple[list[dict[str, 
         ("CAF", fetch_caf_tenders, (keywords,), {}),
         ("TED", fetch_ted_notices, (keywords,), {}),
         ("Find a Tender", fetch_find_a_tender_notices, (keywords,), {}),
+        ("EEAS", fetch_eeas_tenders, (keywords,), {}),
+        ("Fairtrade International", fetch_fairtrade_opportunities, (keywords,), {}),
     ]
 
     if appname:
@@ -2760,6 +2768,117 @@ def fetch_save_the_children_tenders(keywords: list[str]) -> list[dict]:
         items.append(record)
 
     return items
+
+
+def fetch_eeas_tenders(keywords: list[str], probe: SourceProbe | None = None) -> list[dict]:
+    items: list[dict] = []
+    seen: set[str] = set()
+    fetched = parsed = 0
+    # Limit each run to recent listing pages; the source is updated daily.
+    for page in range(5):
+        url = EEAS_TENDERS_URL if page == 0 else f"{EEAS_TENDERS_URL}?page={page}"
+        soup = BeautifulSoup(request_text(url, probe=probe), "html.parser")
+        for anchor in soup.select("a[href]"):
+            title = compact_space(anchor.get_text(" ", strip=True))
+            if not title or len(title) < 12:
+                continue
+            url = parse.urljoin(EEAS_TENDERS_URL, compact_space(anchor.get("href"))).split("#", 1)[0]
+            parsed_url = parse.urlparse(url)
+            if parsed_url.netloc not in {"www.eeas.europa.eu", "eeas.europa.eu"}:
+                continue
+            if url in seen:
+                continue
+            # The landing page contains navigation and news. Keep only procurement-like
+            # links or links whose card text labels them as a tender/call.
+            card = anchor.find_parent(["article", "li"]) or anchor.parent
+            card_text = compact_space(card.get_text(" ", strip=True)) if card else title
+            hint = normalize_match_text(f"{title} {card_text} {url}")
+            if not any(term in hint for term in ("tender", "procurement", "call for", "contract", "ex-ante")):
+                continue
+            seen.add(url)
+            fetched += 1
+            deadline = extract_source_deadline(card_text)
+            record = {
+                "title": title,
+                "organization": "European External Action Service",
+                "countryList": [],
+                "deadline": deadline,
+                "type": "Tender",
+                "link": url,
+                "source": "EEAS",
+                "scope": card_text,
+            }
+            parsed += 1
+            if deadline and not is_open_deadline(deadline):
+                continue
+            if matches_keywords({**record, "type": f"Tender {card_text}"}, keywords):
+                items.append(record)
+    if probe is not None:
+        probe.record(fetched=fetched, parsed=parsed)
+    return items
+
+
+def fetch_fairtrade_opportunities(
+    keywords: list[str], probe: SourceProbe | None = None
+) -> list[dict]:
+    html = request_text(FAIRTRADE_OPPORTUNITIES_URL, probe=probe)
+    soup = BeautifulSoup(html, "html.parser")
+    heading = next(
+        (node for node in soup.select("h1, h2, h3, h4")
+         if "tenders from fairtrade international" in normalize_match_text(node.get_text(" ", strip=True))),
+        None,
+    )
+    if heading is None:
+        if probe is not None:
+            probe.record(fetched=0, parsed=0)
+        return []
+
+    items: list[dict] = []
+    fetched = parsed = 0
+    for sibling in heading.next_siblings:
+        if getattr(sibling, "name", None) in {"h1", "h2", "h3", "h4"}:
+            break
+        anchors = sibling.select("a[href]") if hasattr(sibling, "select") else []
+        for anchor in anchors:
+            title = compact_space(anchor.get_text(" ", strip=True))
+            if not title:
+                continue
+            url = parse.urljoin(FAIRTRADE_OPPORTUNITIES_URL, compact_space(anchor.get("href")))
+            card = anchor.find_parent(["article", "li"]) or anchor.parent
+            scope = compact_space(card.get_text(" ", strip=True)) if card else title
+            fetched += 1
+            deadline = extract_source_deadline(scope)
+            record = {
+                "title": title,
+                "organization": "Fairtrade International",
+                "countryList": [],
+                "deadline": deadline,
+                "type": "Tender / RFP",
+                "link": url,
+                "source": "Fairtrade International",
+                "scope": scope,
+            }
+            parsed += 1
+            if deadline and not is_open_deadline(deadline):
+                continue
+            if matches_keywords({**record, "type": f"Tender / RFP {scope}"}, keywords):
+                items.append(record)
+    if probe is not None:
+        probe.record(fetched=fetched, parsed=parsed)
+    return items
+
+
+def extract_source_deadline(value: str) -> str | None:
+    match = re.search(
+        r"(?:deadline|closing date|submission date|submit(?:ted)? by|due date)[^\d]{0,50}(\d{1,2}[./-]\d{1,2}[./-]\d{4}|\d{4}-\d{2}-\d{2}|\d{1,2}\s+[A-Za-z]+\s+\d{4})",
+        value,
+        flags=re.IGNORECASE,
+    )
+    if not match:
+        return None
+    raw = match.group(1).replace(".", "-")
+    parsed_deadline = parse_date(raw)
+    return parsed_deadline.date().isoformat() if parsed_deadline else None
 
 
 def fetch_plan_international_tenders(
