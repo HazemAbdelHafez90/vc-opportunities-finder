@@ -2809,10 +2809,17 @@ def fetch_eeas_tenders(keywords: list[str], probe: SourceProbe | None = None) ->
                 "scope": card_text,
             }
             parsed += 1
+            if not matches_keywords({**record, "type": f"Tender {card_text}"}, keywords):
+                continue
+            detail = BeautifulSoup(request_text(url, probe=probe), "html.parser")
+            content_node = detail.select_one("main") or detail.select_one("article") or detail.body or detail
+            content = compact_space(content_node.get_text(" ", strip=True))
+            deadline = extract_source_deadline(content) or deadline
             if deadline and not is_open_deadline(deadline):
                 continue
-            if matches_keywords({**record, "type": f"Tender {card_text}"}, keywords):
-                items.append(record)
+            record["deadline"] = deadline
+            record["scope"] = content or card_text
+            items.append(record)
     if probe is not None:
         probe.record(fetched=fetched, parsed=parsed)
     return items
