@@ -22,8 +22,29 @@
       type="font/woff2"
       crossorigin
     />
+
+    <!-- App icon / favicon: the square Fairpicture variant, background baked in,
+         straight from the design system's logo page. -->
+    <link rel="icon" href="./assets/brand/favicon.svg" type="image/svg+xml" />
+    <link rel="icon" href="./assets/brand/favicon-32.png" sizes="32x32" type="image/png" />
+    <link rel="apple-touch-icon" href="./assets/brand/apple-touch-icon.png" sizes="180x180" />
+    <link rel="manifest" href="./site.webmanifest" />
+    <meta name="theme-color" content="#d0343a" />
+    <meta name="application-name" content="Tender Radar" />
+    <meta name="apple-mobile-web-app-title" content="Tender Radar" />
+
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="Fairpicture" />
+    <meta property="og:title" content="Tender Radar" />
+    <meta
+      property="og:description"
+      content="Visual storytelling tenders from every source we track, ranked by fit for Fairpicture."
+    />
+    <meta property="og:image" content="./assets/brand/icon-512.png" />
+    <meta name="twitter:card" content="summary" />
+
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-    <link rel="stylesheet" href="./styles.css?v=20261106c" />
+    <link rel="stylesheet" href="./styles.css?v=20261106d" />
     <script>
       (function() {
         try {
@@ -42,6 +63,34 @@
     </script>
   </head>
   <body>
+    <!-- Fairpicture design system icon set (/foundation/iconography).
+         Every glyph inherits colour through currentColor, so an icon takes the
+         semantic token of whatever wraps it. No second icon library, no emoji. -->
+    <svg class="icon-sprite" aria-hidden="true" focusable="false" width="0" height="0">
+      <defs>
+        <symbol id="i-search" viewBox="0 0 24 24" fill="none"><path fill-rule="evenodd" clip-rule="evenodd" d="M17.25 10.5001C17.25 11.3865 17.0754 12.2643 16.7362 13.0832C16.3969 13.9021 15.8997 14.6463 15.2729 15.2731C14.6461 15.8999 13.902 16.3971 13.0831 16.7363C12.2641 17.0755 11.3864 17.2501 10.5 17.2501C9.61354 17.2501 8.7358 17.0755 7.91685 16.7363C7.09791 16.3971 6.35379 15.8999 5.727 15.2731C5.1002 14.6463 4.603 13.9021 4.26378 13.0832C3.92456 12.2643 3.74997 11.3865 3.74997 10.5001C3.74997 8.70988 4.46113 6.99299 5.727 5.72712C6.99287 4.46125 8.70976 3.75009 10.5 3.75009C12.2902 3.75009 14.0071 4.46125 15.2729 5.72712C16.5388 6.99299 17.25 8.70988 17.25 10.5001ZM16.02 17.6101C14.2115 19.0141 11.936 19.676 9.65667 19.4613C7.37732 19.2466 5.26548 18.1712 3.75109 16.4542C2.2367 14.7372 1.43359 12.5075 1.50527 10.2192C1.57695 7.93089 2.51802 5.7559 4.1369 4.13702C5.75578 2.51814 7.93077 1.57707 10.2191 1.50539C12.5074 1.43372 14.737 2.23682 16.4541 3.75121C18.1711 5.26561 19.2464 7.37744 19.4612 9.65679C19.6759 11.9361 19.0139 14.2117 17.61 16.0201L21.795 20.2051C21.9055 20.3081 21.9942 20.4323 22.0556 20.5703C22.1171 20.7083 22.1502 20.8573 22.1529 21.0083C22.1555 21.1594 22.1277 21.3094 22.0711 21.4495C22.0146 21.5896 21.9304 21.7168 21.8235 21.8236C21.7167 21.9305 21.5894 22.0147 21.4494 22.0713C21.3093 22.1279 21.1592 22.1556 21.0082 22.153C20.8571 22.1503 20.7082 22.1172 20.5702 22.0558C20.4322 21.9943 20.308 21.9056 20.205 21.7951L16.02 17.6101Z" fill="currentColor"/></symbol>
+        <symbol id="i-chevronUp" viewBox="0 0 24 24" fill="none"><path fill-rule="evenodd" clip-rule="evenodd" d="M13.4748 8.61479L18.4248 13.5648C18.8153 13.9553 18.8153 14.5883 18.4248 14.9788C18.0343 15.3693 17.4013 15.3693 17.0108 14.9788L12.7678 10.7358L8.52481 14.9788C8.13434 15.3693 7.50127 15.3693 7.11081 14.9788C6.72034 14.5883 6.72034 13.9553 7.11081 13.5648L12.0608 8.61479C12.2483 8.42732 12.5026 8.322 12.7678 8.322C13.033 8.322 13.2873 8.42732 13.4748 8.61479Z" fill="currentColor"/></symbol>
+        <symbol id="i-chevronDown" viewBox="0 0 24 24" fill="none"><path fill-rule="evenodd" clip-rule="evenodd" d="M12.0608 15.393L7.11077 10.443C6.72031 10.0526 6.72031 9.41949 7.11077 9.02902C7.50124 8.63856 8.13431 8.63856 8.52477 9.02902L12.7678 13.272L17.0108 9.02902C17.4012 8.63856 18.0343 8.63856 18.4248 9.02902C18.8152 9.41949 18.8152 10.0526 18.4248 10.443L13.4748 15.393C13.2872 15.5805 13.0329 15.6858 12.7678 15.6858C12.5026 15.6858 12.2483 15.5805 12.0608 15.393Z" fill="currentColor"/></symbol>
+        <symbol id="i-chevronLeft" viewBox="0 0 24 24" fill="none"><path fill-rule="evenodd" clip-rule="evenodd" d="M9.37877 12.711L14.3288 17.661C14.7192 18.0515 15.3523 18.0515 15.7428 17.661C16.1332 17.2705 16.1332 16.6375 15.7428 16.247L11.4998 12.004L15.7428 7.76102C16.1332 7.37055 16.1332 6.73748 15.7428 6.34701C15.3523 5.95655 14.7192 5.95655 14.3288 6.34701L9.37877 11.297C9.1913 11.4845 9.08598 11.7389 9.08598 12.004C9.08598 12.2692 9.1913 12.5235 9.37877 12.711Z" fill="currentColor"/></symbol>
+        <symbol id="i-chevronRight" viewBox="0 0 24 24" fill="none"><path fill-rule="evenodd" clip-rule="evenodd" d="M16.157 12.711L11.207 17.661C10.8165 18.0515 10.1835 18.0515 9.793 17.661C9.40253 17.2705 9.40253 16.6375 9.793 16.247L14.036 12.004L9.793 7.76102C9.40253 7.37055 9.40253 6.73748 9.793 6.34701C10.1835 5.95655 10.8165 5.95655 11.207 6.34701L16.157 11.297C16.3445 11.4845 16.4498 11.7389 16.4498 12.004C16.4498 12.2692 16.3445 12.5235 16.157 12.711Z" fill="currentColor"/></symbol>
+        <symbol id="i-close" viewBox="0 0 24 24" fill="none"><path d="M12 13.3998L7.10005 18.2998C6.91672 18.4831 6.68338 18.5748 6.40005 18.5748C6.11672 18.5748 5.88338 18.4831 5.70005 18.2998C5.51672 18.1165 5.42505 17.8831 5.42505 17.5998C5.42505 17.3165 5.51672 17.0831 5.70005 16.8998L10.6 11.9998L5.70005 7.0998C5.51672 6.91647 5.42505 6.68314 5.42505 6.3998C5.42505 6.11647 5.51672 5.88314 5.70005 5.6998C5.88338 5.51647 6.11672 5.4248 6.40005 5.4248C6.68338 5.4248 6.91672 5.51647 7.10005 5.6998L12 10.5998L16.9 5.6998C17.0834 5.51647 17.3167 5.4248 17.6001 5.4248C17.8834 5.4248 18.1167 5.51647 18.3 5.6998C18.4834 5.88314 18.5751 6.11647 18.5751 6.3998C18.5751 6.68314 18.4834 6.91647 18.3 7.0998L13.4 11.9998L18.3 16.8998C18.4834 17.0831 18.5751 17.3165 18.5751 17.5998C18.5751 17.8831 18.4834 18.1165 18.3 18.2998C18.1167 18.4831 17.8834 18.5748 17.6001 18.5748C17.3167 18.5748 17.0834 18.4831 16.9 18.2998L12 13.3998Z" fill="currentColor"/></symbol>
+        <symbol id="i-external" viewBox="0 0 24 24" fill="none"><path d="M10 5H8.2C7.08 5 6.52 5 6.092 5.218C5.71569 5.40974 5.40974 5.71569 5.218 6.092C5 6.52 5 7.08 5 8.2V15.8C5 16.92 5 17.48 5.218 17.908C5.40974 18.2843 5.71569 18.5903 6.092 18.782C6.519 19 7.079 19 8.197 19H15.803C16.921 19 17.48 19 17.907 18.782C18.284 18.59 18.59 18.284 18.782 17.908C19 17.48 19 16.921 19 15.803V14M15 4H20V9M20 4L13 11" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+        <symbol id="i-check" viewBox="0 0 24 24" fill="none"><path d="M5 13L9 17L19 7" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+        <symbol id="i-info" viewBox="0 0 24 24" fill="none"><path d="M12 20C16.4183 20 20 16.4183 20 12C20 7.58172 16.4183 4 12 4C7.58172 4 4 7.58172 4 12C4 16.4183 7.58172 20 12 20Z" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/><path d="M12 15.2V12M12 8.80005H12.008" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+        <symbol id="i-inProgress" viewBox="0 0 24 24" fill="none"><path d="M12 1.5C9.9233 1.5 7.89323 2.11581 6.16652 3.26957C4.4398 4.42332 3.09399 6.0632 2.29927 7.98182C1.50455 9.90045 1.29661 12.0116 1.70176 14.0484C2.1069 16.0852 3.10693 17.9562 4.57538 19.4246C6.04383 20.8931 7.91476 21.8931 9.95156 22.2982C11.9884 22.7034 14.0996 22.4955 16.0182 21.7007C17.9368 20.906 19.5767 19.5602 20.7304 17.8335C21.8842 16.1068 22.5 14.0767 22.5 12C22.4968 9.2162 21.3896 6.54733 19.4211 4.57889C17.4527 2.61044 14.7838 1.50318 12 1.5ZM12 21C9.61306 21 7.32387 20.0518 5.63604 18.364C3.94822 16.6761 3 14.3869 3 12C3 9.61305 3.94822 7.32387 5.63604 5.63604C7.32387 3.94821 9.61306 3 12 3V12L18.3608 18.3608C17.5267 19.198 16.5353 19.8622 15.4437 20.3151C14.3522 20.768 13.1818 21.0008 12 21Z" fill="currentColor"/></symbol>
+        <symbol id="i-verify" viewBox="0 0 24 24" fill="none"><path d="M13.1604 3.30043C13.4081 3.19557 13.6823 3.17044 13.945 3.22853C14.2076 3.28662 14.4456 3.42504 14.626 3.62457L16.2506 5.42508C16.3816 5.57008 16.5437 5.68357 16.7247 5.75704L18.9723 6.66789C19.222 6.76896 19.4339 6.94535 19.5786 7.1725C19.7233 7.39966 19.7936 7.66628 19.7797 7.93526L19.6542 10.356C19.6441 10.5516 19.6786 10.747 19.7549 10.9274L20.701 13.1605C20.8055 13.4082 20.8302 13.6823 20.7719 13.9447C20.7135 14.2072 20.5749 14.4449 20.3754 14.6251L18.5751 16.251C18.4301 16.3819 18.3166 16.544 18.2431 16.725L17.3323 18.9726C17.2312 19.222 17.055 19.4338 16.8281 19.5784C16.6012 19.723 16.3349 19.7934 16.0662 19.7798L13.6441 19.6545C13.449 19.6446 13.2541 19.6789 13.074 19.755L10.8409 20.7011C10.5931 20.8059 10.3187 20.8308 10.056 20.7725C9.79335 20.7142 9.55535 20.5755 9.37511 20.3757L7.75048 18.5752C7.61913 18.4301 7.4566 18.3167 7.27512 18.2434L5.02881 17.3324C4.77942 17.2313 4.56769 17.0551 4.42304 16.8282C4.2784 16.6013 4.20802 16.335 4.22169 16.0663L4.34566 13.6445C4.35572 13.4488 4.32127 13.2535 4.24491 13.0731L3.29905 10.8412C3.19407 10.5931 3.16911 10.3184 3.22762 10.0554C3.28614 9.79237 3.42524 9.55416 3.62553 9.37394L5.42476 7.74953C5.57025 7.61864 5.68418 7.45647 5.75799 7.27522L6.66884 5.02764C6.77006 4.7787 6.94621 4.56741 7.17287 4.42306C7.39954 4.27871 7.6655 4.20845 7.93388 4.22201L10.357 4.34576C10.5522 4.35569 10.7471 4.32133 10.9271 4.24523L13.1604 3.30043Z" stroke="currentColor" stroke-width="1.5"/><path d="M8.73348 12.4112L11.1389 15.1554L15.4864 9.07465" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+        <symbol id="i-send" viewBox="0 0 24 24" fill="none"><path d="M14.7599 12H6.83189C6.83189 11.725 6.77489 11.45 6.66189 11.192L4.28489 5.81402C3.52489 4.09402 5.34289 2.37202 7.01889 3.22302L20.7999 10.217C22.2599 10.957 22.2599 13.043 20.7999 13.783L7.01989 20.777C5.34289 21.628 3.52489 19.905 4.28489 18.186L6.65989 12.808C6.77214 12.5534 6.83004 12.2782 6.82989 12" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+        <symbol id="i-stop" viewBox="0 0 24 24" fill="none"><path d="M5.75 5.75L18.25 18.25M12 21C10.8181 21 9.64778 20.7672 8.55585 20.3149C7.46392 19.8626 6.47177 19.1997 5.63604 18.364C4.80031 17.5282 4.13738 16.5361 3.68508 15.4442C3.23279 14.3522 3 13.1819 3 12C3 10.8181 3.23279 9.64778 3.68508 8.55585C4.13738 7.46392 4.80031 6.47177 5.63604 5.63604C6.47177 4.80031 7.46392 4.13738 8.55585 3.68508C9.64778 3.23279 10.8181 3 12 3C14.3869 3 16.6761 3.94821 18.364 5.63604C20.0518 7.32387 21 9.61305 21 12C21 14.3869 20.0518 16.6761 18.364 18.364C16.6761 20.0518 14.3869 21 12 21Z" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+        <symbol id="i-hamburger" viewBox="0 0 24 24" fill="none"><path d="M4 6H20M4 12H20M4 18H20" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></symbol>
+        <symbol id="i-menu" viewBox="0 0 24 24" fill="none"><path d="M2 18C2 16.46 2 15.69 2.347 15.124C2.541 14.807 2.807 14.541 3.124 14.347C3.689 14 4.46 14 6 14C7.54 14 8.31 14 8.876 14.347C9.193 14.541 9.459 14.807 9.653 15.124C10 15.689 10 16.46 10 18C10 19.54 10 20.31 9.653 20.877C9.459 21.193 9.193 21.459 8.876 21.653C8.311 22 7.54 22 6 22C4.46 22 3.69 22 3.124 21.653C2.80735 21.4593 2.54108 21.1934 2.347 20.877C2 20.31 2 19.54 2 18ZM14 18C14 16.46 14 15.69 14.347 15.124C14.541 14.807 14.807 14.541 15.124 14.347C15.689 14 16.46 14 18 14C19.54 14 20.31 14 20.877 14.347C21.193 14.541 21.459 14.807 21.653 15.124C22 15.689 22 16.46 22 18C22 19.54 22 20.31 21.653 20.877C21.4589 21.1931 21.1931 21.4589 20.877 21.653C20.31 22 19.54 22 18 22C16.46 22 15.69 22 15.124 21.653C14.8073 21.4593 14.5411 21.1934 14.347 20.877C14 20.31 14 19.54 14 18ZM2 6C2 4.46 2 3.69 2.347 3.124C2.541 2.807 2.807 2.541 3.124 2.347C3.689 2 4.46 2 6 2C7.54 2 8.31 2 8.876 2.347C9.193 2.541 9.459 2.807 9.653 3.124C10 3.689 10 4.46 10 6C10 7.54 10 8.31 9.653 8.876C9.459 9.193 9.193 9.459 8.876 9.653C8.311 10 7.54 10 6 10C4.46 10 3.69 10 3.124 9.653C2.80724 9.45904 2.54096 9.19277 2.347 8.876C2 8.311 2 7.54 2 6ZM14 6C14 4.46 14 3.69 14.347 3.124C14.541 2.807 14.807 2.541 15.124 2.347C15.689 2 16.46 2 18 2C19.54 2 20.31 2 20.877 2.347C21.193 2.541 21.459 2.807 21.653 3.124C22 3.689 22 4.46 22 6C22 7.54 22 8.31 21.653 8.876C21.459 9.193 21.193 9.459 20.877 9.653C20.31 10 19.54 10 18 10C16.46 10 15.69 10 15.124 9.653C14.8072 9.45904 14.541 9.19277 14.347 8.876C14 8.311 14 7.54 14 6Z" stroke="currentColor" stroke-width="1.5"/></symbol>
+        <symbol id="i-settings" viewBox="0 0 24 24" fill="none"><path d="M9.67106 4.13615C9.72616 3.55649 9.99539 3.0182 10.4262 2.62643C10.8569 2.23467 11.4183 2.01758 12.0006 2.01758C12.5828 2.01758 13.1442 2.23467 13.575 2.62643C14.0057 3.0182 14.275 3.55649 14.3301 4.13615C14.3632 4.51061 14.486 4.87157 14.6882 5.18849C14.8904 5.50541 15.1659 5.76896 15.4915 5.95683C15.8171 6.1447 16.1832 6.25135 16.5588 6.26777C16.9343 6.28419 17.3083 6.20989 17.6491 6.05115C18.1782 5.81093 18.7777 5.77617 19.3311 5.95364C19.8844 6.1311 20.3519 6.5081 20.6426 7.01126C20.9333 7.51441 21.0263 8.10772 20.9037 8.67572C20.7811 9.24372 20.4515 9.74577 19.9791 10.0842C19.6714 10.3 19.4203 10.5868 19.247 10.9202C19.0736 11.2536 18.9831 11.6239 18.9831 11.9997C18.9831 12.3754 19.0736 12.7457 19.247 13.0791C19.4203 13.4125 19.6714 13.6993 19.9791 13.9152C20.4515 14.2535 20.7811 14.7556 20.9037 15.3236C21.0263 15.8916 20.9333 16.4849 20.6426 16.988C20.3519 17.4912 19.8844 17.8682 19.3311 18.0457C18.7777 18.2231 18.1782 18.1884 17.6491 17.9482C17.3083 17.7894 16.9343 17.7151 16.5588 17.7315C16.1832 17.7479 15.8171 17.8546 15.4915 18.0425C15.1659 18.2303 14.8904 18.4939 14.6882 18.8108C14.486 19.1277 14.3632 19.4887 14.3301 19.8632C14.275 20.4428 14.0057 20.9811 13.575 21.3729C13.1442 21.7646 12.5828 21.9817 12.0006 21.9817C11.4183 21.9817 10.8569 21.7646 10.4262 21.3729C9.99539 20.9811 9.72616 20.4428 9.67106 19.8632C9.638 19.4886 9.51516 19.1275 9.31293 18.8104C9.11069 18.4934 8.83503 18.2298 8.50929 18.0419C8.18355 17.854 7.81733 17.7474 7.44164 17.7311C7.06595 17.7147 6.69186 17.7892 6.35106 17.9482C5.82195 18.1884 5.22239 18.2231 4.66906 18.0457C4.11573 17.8682 3.64823 17.4912 3.35754 16.988C3.06685 16.4849 2.97377 15.8916 3.09642 15.3236C3.21907 14.7556 3.54866 14.2535 4.02106 13.9152C4.32868 13.6993 4.57979 13.4125 4.75315 13.0791C4.92651 12.7457 5.01701 12.3754 5.01701 11.9997C5.01701 11.6239 4.92651 11.2536 4.75315 10.9202C4.57979 10.5868 4.32868 10.3 4.02106 10.0842C3.54932 9.7456 3.22031 9.24375 3.09796 8.67613C2.97561 8.10852 3.06867 7.51569 3.35904 7.01286C3.64942 6.51004 4.11637 6.13313 4.66915 5.95539C5.22193 5.77766 5.82104 5.81179 6.35006 6.05115C6.69082 6.20989 7.0648 6.28419 7.44036 6.26777C7.81592 6.25135 8.18199 6.1447 8.5076 5.95683C8.8332 5.76896 9.10875 5.50541 9.31093 5.18849C9.5131 4.87157 9.63594 4.51061 9.66906 4.13615" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/><path d="M12 15C13.6569 15 15 13.6569 15 12C15 10.3431 13.6569 9 12 9C10.3431 9 9 10.3431 9 12C9 13.6569 10.3431 15 12 15Z" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+        <symbol id="i-server" viewBox="0 0 24 24" fill="none"><path d="M6 7.5C6 7.23478 6.10536 6.98043 6.29289 6.79289C6.48043 6.60536 6.73478 6.5 7 6.5C7.26522 6.5 7.51957 6.60536 7.70711 6.79289C7.89464 6.98043 8 7.23478 8 7.5C8 7.76522 7.89464 8.01957 7.70711 8.20711C7.51957 8.39464 7.26522 8.5 7 8.5C6.73478 8.5 6.48043 8.39464 6.29289 8.20711C6.10536 8.01957 6 7.76522 6 7.5ZM9 7.5C9 7.23478 9.10536 6.98043 9.29289 6.79289C9.48043 6.60536 9.73478 6.5 10 6.5C10.2652 6.5 10.5196 6.60536 10.7071 6.79289C10.8946 6.98043 11 7.23478 11 7.5C11 7.76522 10.8946 8.01957 10.7071 8.20711C10.5196 8.39464 10.2652 8.5 10 8.5C9.73478 8.5 9.48043 8.39464 9.29289 8.20711C9.10536 8.01957 9 7.76522 9 7.5ZM7 13.5C6.73478 13.5 6.48043 13.6054 6.29289 13.7929C6.10536 13.9804 6 14.2348 6 14.5C6 14.7652 6.10536 15.0196 6.29289 15.2071C6.48043 15.3946 6.73478 15.5 7 15.5C7.26522 15.5 7.51957 15.3946 7.70711 15.2071C7.89464 15.0196 8 14.7652 8 14.5C8 14.2348 7.89464 13.9804 7.70711 13.7929C7.51957 13.6054 7.26522 13.5 7 13.5ZM10 13.5C9.73478 13.5 9.48043 13.6054 9.29289 13.7929C9.10536 13.9804 9 14.2348 9 14.5C9 14.7652 9.10536 15.0196 9.29289 15.2071C9.48043 15.3946 9.73478 15.5 10 15.5C10.2652 15.5 10.5196 15.3946 10.7071 15.2071C10.8946 15.0196 11 14.7652 11 14.5C11 14.2348 10.8946 13.9804 10.7071 13.7929C10.5196 13.6054 10.2652 13.5 10 13.5Z" fill="currentColor"/><path fill-rule="evenodd" clip-rule="evenodd" d="M5.94702 3.25C5.21768 3.25 4.51821 3.53973 4.00248 4.05546C3.48676 4.57118 3.19702 5.27065 3.19702 6V9C3.19702 9.788 3.52902 10.499 4.06002 11C3.78708 11.2567 3.56967 11.5666 3.42124 11.9106C3.2728 12.2546 3.19649 12.6253 3.19702 13V16C3.19702 16.7293 3.48676 17.4288 4.00248 17.9445C4.51821 18.4603 5.21768 18.75 5.94702 18.75H11.25V20.25H5.00002C4.80111 20.25 4.61035 20.329 4.46969 20.4697C4.32904 20.6103 4.25002 20.8011 4.25002 21C4.25002 21.1989 4.32904 21.3897 4.46969 21.5303C4.61035 21.671 4.80111 21.75 5.00002 21.75H19C19.1989 21.75 19.3897 21.671 19.5304 21.5303C19.671 21.3897 19.75 21.1989 19.75 21C19.75 20.8011 19.671 20.6103 19.5304 20.4697C19.3897 20.329 19.1989 20.25 19 20.25H12.75V18.75H17.947C18.3082 18.75 18.6658 18.6789 18.9994 18.5407C19.333 18.4025 19.6362 18.1999 19.8916 17.9445C20.1469 17.6892 20.3495 17.386 20.4877 17.0524C20.6259 16.7187 20.697 16.3611 20.697 16V13C20.697 12.212 20.366 11.501 19.835 11C20.1078 10.7433 20.325 10.4333 20.4733 10.0893C20.6215 9.74533 20.6977 9.37458 20.697 9V6C20.697 5.63886 20.6259 5.28127 20.4877 4.94762C20.3495 4.61398 20.1469 4.31082 19.8916 4.05546C19.6362 3.8001 19.333 3.59753 18.9994 3.45933C18.6658 3.32113 18.3082 3.25 17.947 3.25H5.94702ZM5.94702 10.25H17.947C18.637 10.25 19.197 9.69 19.197 9V6C19.197 5.31 18.637 4.75 17.947 4.75H5.94702C5.25702 4.75 4.69702 5.31 4.69702 6V9C4.69702 9.69 5.25702 10.25 5.94702 10.25ZM5.94702 11.75C5.25702 11.75 4.69702 12.31 4.69702 13V16C4.69702 16.69 5.25702 17.25 5.94702 17.25H17.947C18.637 17.25 19.197 16.69 19.197 16V13C19.197 12.31 18.637 11.75 17.947 11.75H5.94702Z" fill="currentColor"/></symbol>
+        <symbol id="i-retry" viewBox="0 0 24 24" fill="none"><path fill-rule="evenodd" clip-rule="evenodd" d="M11.235 3.0326C12.7883 2.90003 14.3494 3.17324 15.7654 3.82546C17.1813 4.47767 18.4036 5.48653 19.3125 6.75321V4.96884C19.3125 4.74505 19.4014 4.53043 19.5596 4.37219C19.7179 4.21394 19.9325 4.12504 20.1562 4.12504C20.38 4.12504 20.5946 4.21394 20.7529 4.37219C20.9111 4.53043 21 4.74505 21 4.96884V9.75039H16.2188C15.995 9.75039 15.7804 9.66149 15.6221 9.50325C15.4639 9.345 15.375 9.13038 15.375 8.90659C15.375 8.6828 15.4639 8.46817 15.6221 8.30993C15.7804 8.15169 15.995 8.06279 16.2188 8.06279H18.1616C17.3923 6.85886 16.2871 5.90669 14.9826 5.3239C13.6782 4.74112 12.2316 4.55325 10.8215 4.7835C9.41151 5.01376 8.09981 5.65205 7.04847 6.61952C5.99714 7.587 5.25222 8.84128 4.90575 10.2274C4.88019 10.3363 4.83325 10.439 4.76764 10.5296C4.70203 10.6202 4.61907 10.6968 4.52358 10.755C4.42809 10.8133 4.32198 10.8519 4.21142 10.8688C4.10086 10.8856 3.98805 10.8803 3.87955 10.8532C3.77106 10.826 3.66904 10.7776 3.57944 10.7107C3.48983 10.6437 3.41442 10.5597 3.3576 10.4633C3.30077 10.367 3.26367 10.2603 3.24844 10.1495C3.2332 10.0387 3.24015 9.92599 3.26888 9.8179C3.72399 7.99801 4.73633 6.36582 6.16439 5.14947C7.59245 3.93312 9.36487 3.19341 11.2339 3.03372L11.235 3.0326ZM7.41 19.7421C8.61598 20.457 9.97228 20.8802 11.3708 20.9781C12.7693 21.0759 14.1713 20.8457 15.465 20.3057C16.7588 19.7658 17.9086 18.9311 18.8226 17.8681C19.7367 16.8051 20.3899 15.5433 20.73 14.1832C20.7806 13.9674 20.7444 13.7403 20.629 13.5511C20.5136 13.3618 20.3284 13.2256 20.1133 13.1718C19.8983 13.118 19.6708 13.151 19.4799 13.2636C19.289 13.3762 19.15 13.5594 19.0931 13.7736C18.7465 15.1595 18.0015 16.4135 16.9503 17.3807C15.899 18.3479 14.5875 18.986 13.1777 19.2163C11.768 19.4465 10.3216 19.2588 9.0173 18.6762C7.713 18.0937 6.60786 17.1418 5.83838 15.9383H7.78125C8.00503 15.9383 8.21964 15.8494 8.37787 15.6911C8.53611 15.5329 8.625 15.3183 8.625 15.0945C8.625 14.8707 8.53611 14.6561 8.37787 14.4978C8.21964 14.3396 8.00503 14.2507 7.78125 14.2507H3V19.0322C3 19.256 3.08889 19.4706 3.24713 19.6289C3.40536 19.7871 3.61997 19.876 3.84375 19.876C4.06753 19.876 4.28214 19.7871 4.44037 19.6289C4.59861 19.4706 4.6875 19.256 4.6875 19.0322V17.2479C5.41288 18.2585 6.33988 19.1078 7.41 19.7421Z" fill="currentColor"/></symbol>
+        <symbol id="i-login" viewBox="0 0 24 24" fill="none"><path d="M8 7.99989C8 7.42489 8 7.17789 8.045 6.92489C8.13305 6.43403 8.34289 5.97311 8.65527 5.58438C8.96765 5.19565 9.3726 4.89153 9.833 4.69989C10.073 4.59989 10.356 4.53489 10.923 4.40589L13.651 3.78289C17.041 3.00889 18.735 2.62189 19.868 3.51289C21 4.40489 21 6.12589 21 9.56789V14.4319C21 17.8739 21 19.5959 19.868 20.4869C18.735 21.3779 17.041 20.9909 13.651 20.2169L10.923 19.5939C10.356 19.4639 10.073 19.3999 9.833 19.2999C9.3726 19.1082 8.96765 18.8041 8.65527 18.4154C8.34289 18.0267 8.13305 17.5657 8.045 17.0749C8 16.8219 8 16.5749 8 15.9999" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/><path d="M13 9C13 9 16 11.21 16 12C16 12.79 13 15 13 15M15.5 12H3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+        <symbol id="i-sortAscending" viewBox="0 0 24 24" fill="none"><path fill-rule="evenodd" clip-rule="evenodd" d="M6.51417 4.28564C6.73403 4.28564 6.9346 4.36879 7.08674 4.50507L7.16303 4.57964L10.1935 7.61007C10.3542 7.77079 10.4446 7.9888 10.4446 8.21614C10.4447 8.44347 10.3544 8.66151 10.1937 8.82229C10.0329 8.98307 9.81494 9.07341 9.58761 9.07345C9.36027 9.07349 9.14223 8.98322 8.98145 8.8225L7.37088 7.21193V18.8571C7.37088 19.0844 7.28058 19.3024 7.11983 19.4632C6.95909 19.6239 6.74107 19.7142 6.51374 19.7142C6.28641 19.7142 6.06839 19.6239 5.90765 19.4632C5.7469 19.3024 5.6566 19.0844 5.6566 18.8571V7.19993L4.03445 8.8225C3.95484 8.90208 3.86034 8.9652 3.75634 9.00826C3.65233 9.05132 3.54087 9.07347 3.4283 9.07345C3.31574 9.07343 3.20428 9.05124 3.10029 9.00815C2.9963 8.96505 2.90182 8.9019 2.82224 8.82229C2.74266 8.74268 2.67954 8.64817 2.63648 8.54417C2.59342 8.44017 2.57127 8.3287 2.57129 8.21614C2.57133 7.9888 2.66168 7.77079 2.82245 7.61007L5.85245 4.58007L5.90474 4.53164L5.9596 4.48879C6.10917 4.36193 6.30288 4.28564 6.51417 4.28564ZM20.1427 17.1428C20.3701 17.1428 20.5881 17.2331 20.7488 17.3938C20.9096 17.5546 20.9999 17.7726 20.9999 17.9999C20.9999 18.2273 20.9096 18.4453 20.7488 18.606C20.5881 18.7668 20.3701 18.8571 20.1427 18.8571H9.85703C9.6297 18.8571 9.41168 18.7668 9.25093 18.606C9.09019 18.4453 8.99988 18.2273 8.99988 17.9999C8.99988 17.7726 9.09019 17.5546 9.25093 17.3938C9.41168 17.2331 9.6297 17.1428 9.85703 17.1428H20.1427ZM16.7142 13.7142C16.9415 13.7142 17.1595 13.8045 17.3203 13.9653C17.481 14.126 17.5713 14.344 17.5713 14.5714C17.5713 14.7987 17.481 15.0167 17.3203 15.1775C17.1595 15.3382 16.9415 15.4285 16.7142 15.4285H9.85703C9.6297 15.4285 9.41168 15.3382 9.25093 15.1775C9.09019 15.0167 8.99988 14.7987 8.99988 14.5714C8.99988 14.344 9.09019 14.126 9.25093 13.9653C9.41168 13.8045 9.6297 13.7142 9.85703 13.7142H16.7142ZM13.2856 10.2856C13.5129 10.2856 13.7309 10.376 13.8917 10.5367C14.0524 10.6974 14.1427 10.9155 14.1427 11.1428C14.1427 11.3701 14.0524 11.5881 13.8917 11.7489C13.7309 11.9096 13.5129 11.9999 13.2856 11.9999H9.85703C9.6297 11.9999 9.41168 11.9096 9.25093 11.7489C9.09019 11.5881 8.99988 11.3701 8.99988 11.1428C8.99988 10.9155 9.09019 10.6974 9.25093 10.5367C9.41168 10.376 9.6297 10.2856 9.85703 10.2856H13.2856Z" fill="currentColor"/></symbol>
+        <symbol id="i-sortDescending" viewBox="0 0 24 24" fill="none"><path fill-rule="evenodd" clip-rule="evenodd" d="M6.51417 19.7144C6.73403 19.7144 6.9346 19.6312 7.08674 19.4949L7.16303 19.4204L10.1935 16.3899C10.3542 16.2292 10.4446 16.0112 10.4446 15.7839C10.4447 15.5565 10.3544 15.3385 10.1937 15.1777C10.0329 15.0169 9.81494 14.9266 9.58761 14.9265C9.36027 14.9265 9.14223 15.0168 8.98145 15.1775L7.37088 16.7881V5.14293C7.37088 4.9156 7.28058 4.69758 7.11983 4.53683C6.95909 4.37609 6.74107 4.28578 6.51374 4.28578C6.28641 4.28578 6.06839 4.37609 5.90765 4.53683C5.7469 4.69758 5.6566 4.9156 5.6566 5.14293V16.8001L4.03445 15.1775C3.95484 15.0979 3.86034 15.0348 3.75634 14.9917C3.65233 14.9487 3.54087 14.9265 3.4283 14.9265C3.31574 14.9266 3.20428 14.9488 3.10029 14.9919C2.9963 15.0349 2.90182 15.0981 2.82224 15.1777C2.74266 15.2573 2.67954 15.3518 2.63648 15.4558C2.59342 15.5598 2.57127 15.6713 2.57129 15.7839C2.57133 16.0112 2.66168 16.2292 2.82245 16.3899L5.85245 19.4199L5.90474 19.4684L5.9596 19.5112C6.10917 19.6381 6.30288 19.7144 6.51417 19.7144ZM20.1427 6.85721C20.3701 6.85721 20.5881 6.76691 20.7488 6.60616C20.9096 6.44542 20.9999 6.2274 20.9999 6.00007C20.9999 5.77274 20.9096 5.55472 20.7488 5.39398C20.5881 5.23323 20.3701 5.14293 20.1427 5.14293H9.85703C9.6297 5.14293 9.41168 5.23323 9.25093 5.39398C9.09019 5.55472 8.99988 5.77274 8.99988 6.00007C8.99988 6.2274 9.09019 6.44542 9.25093 6.60616C9.41168 6.76691 9.6297 6.85721 9.85703 6.85721H20.1427ZM16.7142 10.2858C16.9415 10.2858 17.1595 10.1955 17.3203 10.0347C17.481 9.87399 17.5713 9.65597 17.5713 9.42864C17.5713 9.20131 17.481 8.98329 17.3203 8.82255C17.1595 8.6618 16.9415 8.5715 16.7142 8.5715H9.85703C9.6297 8.5715 9.41168 8.6618 9.25093 8.82255C9.09019 8.98329 8.99988 9.20131 8.99988 9.42864C8.99988 9.65597 9.09019 9.87399 9.25093 10.0347C9.41168 10.1955 9.6297 10.2858 9.85703 10.2858H16.7142ZM13.2856 13.7144C13.5129 13.7144 13.7309 13.624 13.8917 13.4633C14.0524 13.3026 14.1427 13.0845 14.1427 12.8572C14.1427 12.6299 14.0524 12.4119 13.8917 12.2511C13.7309 12.0904 13.5129 12.0001 13.2856 12.0001H9.85703C9.6297 12.0001 9.41168 12.0904 9.25093 12.2511C9.09019 12.4119 8.99988 12.6299 8.99988 12.8572C8.99988 13.0845 9.09019 13.3026 9.25093 13.4633C9.41168 13.624 9.6297 13.7144 9.85703 13.7144H13.2856Z" fill="currentColor"/></symbol>
+      </defs>
+    </svg>
     <section id="boot-shell" class="boot-shell" aria-live="polite">
       <div class="boot-shell__panel">
         <p class="section-label">Secure workspace</p>
@@ -57,34 +106,49 @@
 
     <section id="auth-shell" class="auth-shell" hidden>
       <div class="auth-shell__brand">
+        <!-- Branded house: the fairpicture wordmark carries the brand, Tender Radar
+             names the tool beneath it. Reversed variant on dark, primary on light. -->
         <div class="brand-wordmark auth-stage auth-stage--0">
-          <span class="brand-wordmark__mark" aria-hidden="true">
-            <svg viewBox="0 0 32 32">
-              <circle cx="16" cy="16" r="7.2"></circle>
-              <path d="M16 2.5v4.4M16 25.1v4.4M2.5 16h4.4M25.1 16h4.4"></path>
-            </svg>
-          </span>
-          <span class="brand-wordmark__text">Fairpicture</span>
+          <img
+            class="brand-wordmark__logo brand-wordmark__logo--primary"
+            src="./assets/brand/fairpicture-logo.svg"
+            alt="fairpicture"
+            width="180"
+            height="28"
+          />
+          <img
+            class="brand-wordmark__logo brand-wordmark__logo--reversed"
+            src="./assets/brand/fairpicture-logo-reversed.svg"
+            alt=""
+            aria-hidden="true"
+            width="180"
+            height="28"
+          />
         </div>
 
         <div class="auth-hero">
           <p class="auth-kicker auth-stage auth-stage--1"><span></span>Tender Radar</p>
           <h1 class="auth-stage auth-stage--2">One desk for every <em>visual storytelling</em> tender.</h1>
           <p class="auth-shell__summary auth-stage auth-stage--3">
-            A live procurement desk scanning ReliefWeb, UNDP, UNGM, ICIMOD and more, ranked by fit for documentary, photography and field production work.
+            A live procurement desk scanning ReliefWeb, UNDP, UNGM, TED, Find a Tender and more, ranked by fit for documentary, photography and field production work.
           </p>
+          <!-- Live pills mirror ACTIVE_SOURCES in api/_lib.py. ICIMOD is retired and
+               no longer fetched, so it is not listed here. -->
           <div class="source-pills auth-stage auth-stage--4" aria-label="Source coverage">
             <span class="source-pills__item source-pills__item--live">ReliefWeb</span>
             <span class="source-pills__item source-pills__item--live">UNDP Procurement</span>
             <span class="source-pills__item source-pills__item--live">UNGM</span>
-            <span class="source-pills__item source-pills__item--live">ICIMOD</span>
             <span class="source-pills__item source-pills__item--live">Welthungerhilfe</span>
+            <span class="source-pills__item source-pills__item--live">Plan International</span>
+            <span class="source-pills__item source-pills__item--live">CAF</span>
+            <span class="source-pills__item source-pills__item--live">TED</span>
+            <span class="source-pills__item source-pills__item--live">Find a Tender</span>
             <span class="source-pills__item">Aid-LINK</span>
             <span class="source-pills__item">NGOtenders</span>
           </div>
           <div class="auth-stats auth-stage auth-stage--5">
             <div>
-              <strong>5</strong>
+              <strong>8</strong>
               <span>Live sources</span>
             </div>
             <div>
@@ -133,12 +197,13 @@
     <div id="app-shell" class="page-shell" hidden>
       <header class="app-bar">
         <div class="app-bar__identity">
-          <span class="app-bar__mark" aria-hidden="true">
-            <svg viewBox="0 0 32 32">
-              <circle cx="16" cy="16" r="7.2"></circle>
-              <path d="M16 2.5v4.4M16 25.1v4.4M2.5 16h4.4M25.1 16h4.4"></path>
-            </svg>
-          </span>
+          <img
+            class="app-bar__mark"
+            src="./assets/brand/favicon.svg"
+            alt="fairpicture"
+            width="28"
+            height="28"
+          />
           <div>
             <h1 class="app-bar__title">Tender Radar</h1>
             <p class="app-bar__meta">
@@ -156,34 +221,25 @@
           <strong id="result-count" hidden>0 items</strong>
         </div>
         <div class="app-bar__actions">
-          <!-- Legacy theme buttons kept for JS compatibility, replaced visually by the toggle -->
-          <div class="display-group display-group--header" role="group" aria-label="Theme mode" hidden>
-            <button id="theme-light" class="display-toggle active" type="button">Light</button>
-            <button id="theme-dark" class="display-toggle" type="button">Dark</button>
+          <!-- The design system's 89-icon set publishes no sun or moon, and drawing
+               one is out of bounds, so the theme control is a labelled segmented
+               control instead of an icon switch. -->
+          <div class="display-group display-group--header" role="group" aria-label="Theme">
+            <button id="theme-light" class="display-toggle active" type="button" aria-pressed="true">Light</button>
+            <button id="theme-dark" class="display-toggle" type="button" aria-pressed="false">Dark</button>
           </div>
 
-          <button id="theme-toggle" class="theme-toggle" type="button" aria-label="Switch between light and dark mode">
-            <span class="theme-toggle__thumb" aria-hidden="true"></span>
-            <span class="theme-toggle__icons" aria-hidden="true">
-              <svg class="theme-toggle__icon theme-toggle__icon--sun" viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg">
-                    <path fill-rule="evenodd" d="M10 2a1 1 0 011 1v1a1 1 0 11-2 0V3a1 1 0 011-1zm4 8a4 4 0 11-8 0 4 4 0 018 0zm-.464 4.95l.707.707a1 1 0 001.414-1.414l-.707-.707a1 1 0 00-1.414 1.414zm2.12-10.607a1 1 0 010 1.414l-.706.707a1 1 0 11-1.414-1.414l.707-.707a1 1 0 011.414 0zM17 11a1 1 0 100-2h-1a1 1 0 100 2h1zm-7 4a1 1 0 011 1v1a1 1 0 11-2 0v-1a1 1 0 011-1zM5.05 6.464A1 1 0 106.465 5.05l-.708-.707a1 1 0 00-1.414 1.414l.707.707zm1.414 8.486l-.707.707a1 1 0 01-1.414-1.414l.707-.707a1 1 0 011.414 1.414zM4 11a1 1 0 100-2H3a1 1 0 000 2h1z" clip-rule="evenodd"/>
-              </svg>
-              <svg class="theme-toggle__icon theme-toggle__icon--moon" viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg">
-                <path d="M17.293 13.293A8 8 0 016.707 2.707a8.001 8.001 0 1010.586 10.586z"/>
-              </svg>
-            </span>
-          </button>
-
-          <button id="sources-button" class="ghost-button" type="button">Sources</button>
-          <button id="open-settings" class="ghost-button" type="button">Settings</button>
+          <button id="sources-button" class="ghost-button" type="button"><svg class="icon" aria-hidden="true"><use href="#i-server"></use></svg>Sources</button>
+          <button id="open-settings" class="ghost-button" type="button"><svg class="icon" aria-hidden="true"><use href="#i-settings"></use></svg>Settings</button>
           <div id="auth-user" class="auth-user" hidden>
             <span id="auth-user-email" class="auth-user__email"></span>
             <button id="sign-out-button" class="ghost-button" type="button">
-              Sign out
+              <svg class="icon" aria-hidden="true"><use href="#i-login"></use></svg>Sign out
             </button>
           </div>
           <button id="fetch-button" class="primary-button" type="button">
             <span class="button-spinner" aria-hidden="true"></span>
+            <svg class="icon button-icon" aria-hidden="true"><use href="#i-retry"></use></svg>
             <span class="button-label">Refresh results</span>
           </button>
         </div>
@@ -225,7 +281,7 @@
           <button class="stat" type="button" data-stat-filter="high-fit" aria-pressed="false">
             <span id="stat-high-fit" class="stat__value stat__value--success">0</span>
             <span class="stat__label">High fit</span>
-            <span id="stat-high-fit-sub" class="stat__sub">↑ 0 new this week</span>
+            <span class="stat__sub"><svg class="icon stat__trend" aria-hidden="true"><use href="#i-chevronUp"></use></svg><span id="stat-high-fit-sub">0 new this week</span></span>
           </button>
           <button class="stat" type="button" data-stat-filter="expiring" aria-pressed="false">
             <span id="stat-expiring" class="stat__value stat__value--warning">0</span>
@@ -302,22 +358,18 @@
 
             <div class="results-toolbar" aria-label="Display preferences">
               <label class="toolbar-search" for="tender-search">
-                <svg viewBox="0 0 20 20" aria-hidden="true">
-                  <path d="M13.9 13.9 18 18M8.5 15.5a7 7 0 1 1 0-14 7 7 0 0 1 0 14Z"></path>
-                </svg>
+    <svg class="icon" aria-hidden="true"><use href="#i-search"></use></svg>
                 <input
                   id="tender-search"
                   type="search"
                   placeholder="Search title, organisation, source, link or notice ID"
                   autocomplete="off"
                 />
-                <button id="tender-search-clear" class="search-clear-button" type="button" aria-label="Clear search" hidden>
-                  ×
-                </button>
+                <button id="tender-search-clear" class="search-clear-button" type="button" aria-label="Clear search" hidden><svg class="icon" aria-hidden="true"><use href="#i-close"></use></svg></button>
               </label>
 
               <details class="filter-chip" id="fit-filter-details">
-                <summary id="fit-filter-chip">Fit <svg viewBox="0 0 10 10"><path d="M2 3.5 5 6.5 8 3.5"></path></svg></summary>
+                <summary id="fit-filter-chip">Fit <svg class="icon filter-chip__chevron" aria-hidden="true"><use href="#i-chevronDown"></use></svg></summary>
                 <div class="filter-chip__panel">
                   <select id="filter-fit" aria-label="Filter by fit level">
                     <option value="all">All fit</option>
@@ -329,7 +381,7 @@
               </details>
 
               <details class="filter-chip" id="warmth-filter-details">
-                <summary id="warmth-filter-chip">Client <svg viewBox="0 0 10 10"><path d="M2 3.5 5 6.5 8 3.5"></path></svg></summary>
+                <summary id="warmth-filter-chip">Client <svg class="icon filter-chip__chevron" aria-hidden="true"><use href="#i-chevronDown"></use></svg></summary>
                 <div class="filter-chip__panel">
                   <select id="filter-warmth" aria-label="Filter by client relationship">
                     <option value="all">All relationships</option>
@@ -343,7 +395,7 @@
               </details>
 
               <details class="filter-chip" id="deadline-filter-details">
-                <summary id="deadline-filter-chip">Deadline <svg viewBox="0 0 10 10"><path d="M2 3.5 5 6.5 8 3.5"></path></svg></summary>
+                <summary id="deadline-filter-chip">Deadline <svg class="icon filter-chip__chevron" aria-hidden="true"><use href="#i-chevronDown"></use></svg></summary>
                 <div class="filter-chip__panel">
                   <select id="filter-deadline" aria-label="Filter by deadline">
                     <option value="all">Any deadline</option>
@@ -358,7 +410,7 @@
               </details>
 
               <details class="filter-chip" id="source-filter-details">
-                <summary id="source-filter-chip">Source <svg viewBox="0 0 10 10"><path d="M2 3.5 5 6.5 8 3.5"></path></svg></summary>
+                <summary id="source-filter-chip">Source <svg class="icon filter-chip__chevron" aria-hidden="true"><use href="#i-chevronDown"></use></svg></summary>
                 <div class="filter-chip__panel">
                   <select id="filter-source" aria-label="Filter by source">
                     <option value="all">All sources</option>
@@ -367,12 +419,16 @@
                     <option value="UNGM">UNGM</option>
                     <option value="ICIMOD">ICIMOD</option>
                     <option value="Welthungerhilfe">Welthungerhilfe</option>
+                    <option value="Plan International">Plan International</option>
+                    <option value="CAF">CAF</option>
+                    <option value="TED">TED</option>
+                    <option value="Find a Tender">Find a Tender</option>
                   </select>
                 </div>
               </details>
 
               <details class="filter-chip" id="status-filter-details">
-                <summary id="status-filter-chip">Status <svg viewBox="0 0 10 10"><path d="M2 3.5 5 6.5 8 3.5"></path></svg></summary>
+                <summary id="status-filter-chip">Status <svg class="icon filter-chip__chevron" aria-hidden="true"><use href="#i-chevronDown"></use></svg></summary>
                 <div class="filter-chip__panel">
                   <select id="filter-status" aria-label="Filter by status">
                     <option value="all">All statuses</option>
@@ -393,10 +449,10 @@
                 <p id="results-filter-summary" class="results-filter-summary" hidden>0 results</p>
                 <div class="display-group" role="group" aria-label="View mode">
                   <button id="view-table" class="display-toggle active" type="button" aria-label="Table view">
-                    <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M2 4h16v4H2zM2 10h16v4H2zM2 16h16v2H2z"></path></svg>
+                    <svg class="icon" aria-hidden="true"><use href="#i-hamburger"></use></svg>
                   </button>
                   <button id="view-cards" class="display-toggle" type="button" aria-label="Cards view">
-                    <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M2 3h7v6H2zM11 3h7v6h-7zM2 11h7v6H2zM11 11h7v6h-7z"></path></svg>
+                    <svg class="icon" aria-hidden="true"><use href="#i-menu"></use></svg>
                   </button>
                 </div>
               </div>
@@ -427,15 +483,15 @@
               <table>
                 <thead>
                   <tr>
-                    <th><button class="table-sort-button active" type="button" data-sort-column="fit">Fit</button></th>
-                    <th><button class="table-sort-button" type="button" data-sort-column="warmth">Client</button></th>
+                    <th><button class="table-sort-button active" type="button" data-sort-column="fit"><span>Fit</span><span class="table-sort-button__sort" aria-hidden="true"><svg class="icon table-sort-button__icon table-sort-button__icon--asc"><use href="#i-sortAscending"></use></svg><svg class="icon table-sort-button__icon table-sort-button__icon--desc"><use href="#i-sortDescending"></use></svg></span></button></th>
+                    <th><button class="table-sort-button" type="button" data-sort-column="warmth"><span>Client</span><span class="table-sort-button__sort" aria-hidden="true"><svg class="icon table-sort-button__icon table-sort-button__icon--asc"><use href="#i-sortAscending"></use></svg><svg class="icon table-sort-button__icon table-sort-button__icon--desc"><use href="#i-sortDescending"></use></svg></span></button></th>
                     <th>Position</th>
-                    <th><button class="table-sort-button" type="button" data-sort-column="opportunity">Opportunity</button></th>
-                    <th><button class="table-sort-button" type="button" data-sort-column="source">Source</button></th>
-                    <th><button class="table-sort-button" type="button" data-sort-column="added">Added</button></th>
-                    <th><button class="table-sort-button" type="button" data-sort-column="deadline">Deadline</button></th>
-                    <th><button class="table-sort-button" type="button" data-sort-column="status">Status</button></th>
-                    <th><button class="table-sort-button" type="button" data-sort-column="link">Link</button></th>
+                    <th><button class="table-sort-button" type="button" data-sort-column="opportunity"><span>Opportunity</span><span class="table-sort-button__sort" aria-hidden="true"><svg class="icon table-sort-button__icon table-sort-button__icon--asc"><use href="#i-sortAscending"></use></svg><svg class="icon table-sort-button__icon table-sort-button__icon--desc"><use href="#i-sortDescending"></use></svg></span></button></th>
+                    <th><button class="table-sort-button" type="button" data-sort-column="source"><span>Source</span><span class="table-sort-button__sort" aria-hidden="true"><svg class="icon table-sort-button__icon table-sort-button__icon--asc"><use href="#i-sortAscending"></use></svg><svg class="icon table-sort-button__icon table-sort-button__icon--desc"><use href="#i-sortDescending"></use></svg></span></button></th>
+                    <th><button class="table-sort-button" type="button" data-sort-column="added"><span>Added</span><span class="table-sort-button__sort" aria-hidden="true"><svg class="icon table-sort-button__icon table-sort-button__icon--asc"><use href="#i-sortAscending"></use></svg><svg class="icon table-sort-button__icon table-sort-button__icon--desc"><use href="#i-sortDescending"></use></svg></span></button></th>
+                    <th><button class="table-sort-button" type="button" data-sort-column="deadline"><span>Deadline</span><span class="table-sort-button__sort" aria-hidden="true"><svg class="icon table-sort-button__icon table-sort-button__icon--asc"><use href="#i-sortAscending"></use></svg><svg class="icon table-sort-button__icon table-sort-button__icon--desc"><use href="#i-sortDescending"></use></svg></span></button></th>
+                    <th><button class="table-sort-button" type="button" data-sort-column="status"><span>Status</span><span class="table-sort-button__sort" aria-hidden="true"><svg class="icon table-sort-button__icon table-sort-button__icon--asc"><use href="#i-sortAscending"></use></svg><svg class="icon table-sort-button__icon table-sort-button__icon--desc"><use href="#i-sortDescending"></use></svg></span></button></th>
+                    <th><button class="table-sort-button" type="button" data-sort-column="link"><span>Link</span><span class="table-sort-button__sort" aria-hidden="true"><svg class="icon table-sort-button__icon table-sort-button__icon--asc"><use href="#i-sortAscending"></use></svg><svg class="icon table-sort-button__icon table-sort-button__icon--desc"><use href="#i-sortDescending"></use></svg></span></button></th>
                   </tr>
                 </thead>
                 <tbody id="results-body">
@@ -449,9 +505,9 @@
             <div id="table-pagination" class="table-pagination" hidden>
               <p id="pagination-summary" class="pagination-summary">Showing 0-0 of 0</p>
               <div class="pagination-actions">
-                <button id="pagination-prev" class="pagination-button" type="button">Previous</button>
+                <button id="pagination-prev" class="pagination-button" type="button"><svg class="icon" aria-hidden="true"><use href="#i-chevronLeft"></use></svg>Previous</button>
                 <span id="pagination-page" class="pagination-page">Page 1 of 1</span>
-                <button id="pagination-next" class="pagination-button" type="button">Next</button>
+                <button id="pagination-next" class="pagination-button" type="button">Next<svg class="icon" aria-hidden="true"><use href="#i-chevronRight"></use></svg></button>
               </div>
             </div>
 
@@ -625,9 +681,7 @@
                 title="Previous (↑)"
                 aria-label="Previous opportunity"
               >
-                <svg viewBox="0 0 20 20" aria-hidden="true">
-                  <path d="M5.75 11.25 10 7l4.25 4.25" />
-                </svg>
+                <svg class="icon" aria-hidden="true"><use href="#i-chevronUp"></use></svg>
               </button>
               <button
                 id="detail-next"
@@ -636,9 +690,7 @@
                 title="Next (↓)"
                 aria-label="Next opportunity"
               >
-                <svg viewBox="0 0 20 20" aria-hidden="true">
-                  <path d="M5.75 8.75 10 13l4.25-4.25" />
-                </svg>
+                <svg class="icon" aria-hidden="true"><use href="#i-chevronDown"></use></svg>
               </button>
               <button
                 id="detail-close"
@@ -647,9 +699,7 @@
                 title="Close (Esc)"
                 aria-label="Close details"
               >
-                <svg viewBox="0 0 20 20" aria-hidden="true">
-                  <path d="m6 6 8 8M14 6l-8 8" />
-                </svg>
+                <svg class="icon" aria-hidden="true"><use href="#i-close"></use></svg>
               </button>
             </div>
           </div>
@@ -671,9 +721,7 @@
               rel="noreferrer"
               hidden
             >
-              <svg viewBox="0 0 16 16" aria-hidden="true">
-                <path d="M9.5 2H14v4.5h-1.5v-2L7.1 9.9 6 8.8 11.4 3.5h-1.9V2ZM3 4h4v1.5H4.5v6h6V9H12v4H3V4Z"></path>
-              </svg>
+              <svg class="icon" aria-hidden="true"><use href="#i-external"></use></svg>
               <span>Open posting</span>
             </a>
           </div>
@@ -767,38 +815,26 @@
               <span>Move to</span>
               <div class="detail-state-grid" role="group" aria-label="Move tender to a new state">
                 <button id="detail-state-live" class="detail-state-button" type="button" data-detail-target-state="live">
-                  <svg viewBox="0 0 16 16" aria-hidden="true">
-                    <circle cx="8" cy="8" r="2.75" />
-                  </svg>
+                  <svg class="icon" aria-hidden="true"><use href="#i-inProgress"></use></svg>
                   <span>Live</span>
                 </button>
                 <button id="detail-state-reviewed" class="detail-state-button" type="button" data-detail-target-state="reviewed">
-                  <!-- Eye icon — "we've seen this" -->
-                  <svg viewBox="0 0 16 16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round">
-                    <path d="M1.5 8s2.5-5 6.5-5 6.5 5 6.5 5-2.5 5-6.5 5-6.5-5-6.5-5Z"/>
-                    <circle cx="8" cy="8" r="2"/>
-                  </svg>
+                  <!-- No eye in the published set; a tick reads as "triaged" and stays in-set. -->
+                  <svg class="icon" aria-hidden="true"><use href="#i-check"></use></svg>
                   <span>Reviewed</span>
                 </button>
                 <button id="detail-state-applied" class="detail-state-button" type="button" data-detail-target-state="applied">
-                  <svg viewBox="0 0 16 16" aria-hidden="true">
-                    <path d="m3.75 8.25 2.6 2.6 5.9-5.7" />
-                  </svg>
+                  <svg class="icon" aria-hidden="true"><use href="#i-send"></use></svg>
                   <span>Applied</span>
                 </button>
                 <button id="detail-state-won" class="detail-state-button" type="button" data-detail-target-state="won">
-                  <!-- Trophy — the only terminal success state -->
-                  <svg viewBox="0 0 16 16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round">
-                    <path d="M4.5 2.5h7v3a3.5 3.5 0 0 1-7 0v-3Z" />
-                    <path d="M4.5 3.5h-2v1a2 2 0 0 0 2 2M11.5 3.5h2v1a2 2 0 0 1-2 2" />
-                    <path d="M8 9v2.5M5.75 13.5h4.5" />
-                  </svg>
+                  <!-- No trophy in the published set; verify is the badge the set uses for a
+                       confirmed outcome, and Won is the only terminal success state. -->
+                  <svg class="icon" aria-hidden="true"><use href="#i-verify"></use></svg>
                   <span>Won</span>
                 </button>
                 <button id="detail-state-missed" class="detail-state-button" type="button" data-detail-target-state="missed">
-                  <svg viewBox="0 0 16 16" aria-hidden="true">
-                    <path d="m5 5 6 6M11 5l-6 6" />
-                  </svg>
+                  <svg class="icon" aria-hidden="true"><use href="#i-stop"></use></svg>
                   <span>Missed</span>
                 </button>
               </div>
@@ -823,9 +859,7 @@
                   <option value="duplicate">Duplicate</option>
                 </select>
                 <span class="detail-select-shell__icon" aria-hidden="true">
-                  <svg viewBox="0 0 20 20">
-                    <path d="M5.25 7.5 10 12.25 14.75 7.5" />
-                  </svg>
+                  <svg class="icon" aria-hidden="true"><use href="#i-chevronDown"></use></svg>
                 </span>
               </div>
               <p class="detail-form-field__hint">Required when moving to Missed.</p>
@@ -835,9 +869,7 @@
 
         <div class="detail-modal__footer">
           <p id="detail-action-help" class="detail-modal__info">
-            <svg viewBox="0 0 16 16" aria-hidden="true">
-              <path d="M8 2.5a5.5 5.5 0 1 0 0 11 5.5 5.5 0 0 0 0-11Zm0 3a.75.75 0 1 1 0 1.5A.75.75 0 0 1 8 5.5Zm1 5H7V7.5h2v3Z"></path>
-            </svg>
+            <svg class="icon" aria-hidden="true"><use href="#i-info"></use></svg>
             <span>Missed requires a reason. Notes are optional. Press <kbd>Esc</kbd> to close without saving.</span>
           </p>
 
@@ -852,9 +884,7 @@
               target="_blank"
               rel="noreferrer"
             >
-              <svg viewBox="0 0 16 16" aria-hidden="true">
-                <path d="M9.5 2H14v4.5h-1.5v-2L7.1 9.9 6 8.8 11.4 3.5h-1.9V2ZM3 4h4v1.5H4.5v6h6V9H12v4H3V4Z"></path>
-              </svg>
+              <svg class="icon" aria-hidden="true"><use href="#i-external"></use></svg>
               <span>Source</span>
             </a>
           </div>
@@ -879,9 +909,7 @@
             </p>
           </div>
           <button id="settings-close" class="icon-button icon-button--soft" type="button" aria-label="Close settings">
-            <svg viewBox="0 0 24 24" aria-hidden="true">
-              <path d="M6.4 5 5 6.4 10.6 12 5 17.6 6.4 19l5.6-5.6 5.6 5.6 1.4-1.4-5.6-5.6L19 6.4 17.6 5 12 10.6Z"/>
-            </svg>
+            <svg class="icon" aria-hidden="true"><use href="#i-close"></use></svg>
           </button>
         </div>
 
@@ -970,6 +998,6 @@
 
     <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
 
-    <script src="./app.js?v=20261106c"></script>
+    <script src="./app.js?v=20261106d"></script>
   </body>
 </html>

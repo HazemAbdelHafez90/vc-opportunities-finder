@@ -1,0 +1,16 @@
+{
+  "name": "Fairpicture Tender Radar",
+  "short_name": "Tender Radar",
+  "description": "Visual storytelling tenders from every source we track, ranked by fit for Fairpicture.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#161616",
+  "theme_color": "#d0343a",
+  "icons": [
+    { "src": "/assets/brand/favicon.svg", "type": "image/svg+xml", "sizes": "any" },
+    { "src": "/assets/brand/icon-192.png", "type": "image/png", "sizes": "192x192" },
+    { "src": "/assets/brand/icon-512.png", "type": "image/png", "sizes": "512x512" },
+    { "src": "/assets/brand/icon-512.png", "type": "image/png", "sizes": "512x512", "purpose": "maskable" }
+  ]
+}
