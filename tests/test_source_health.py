@@ -1,7 +1,7 @@
 import unittest
 from datetime import date, datetime, timedelta, timezone
 
-from api.source_health import (
+from lib.source_health import (
     RULE_CONTROL_PROBE,
     RULE_HARD_FAIL,
     RULE_QUALITY_DROP,
@@ -369,7 +369,7 @@ class HeartbeatTests(unittest.TestCase):
 
     def test_no_ping_when_the_run_failed(self):
         import os
-        from api import source_monitor
+        from lib import source_monitor
 
         os.environ[source_monitor.HEARTBEAT_ENV_VAR] = "https://example.invalid/ping"
         try:
@@ -381,7 +381,7 @@ class HeartbeatTests(unittest.TestCase):
 
     def test_no_ping_when_no_url_is_configured(self):
         import os
-        from api import source_monitor
+        from lib import source_monitor
 
         os.environ.pop(source_monitor.HEARTBEAT_ENV_VAR, None)
         result = source_monitor.ping_heartbeat(True)

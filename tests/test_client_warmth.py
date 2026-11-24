@@ -1,6 +1,6 @@
 import unittest
 
-from api.client_warmth import canonical_org_name, extract_domain_label, get_client_warmth
+from lib.client_warmth import canonical_org_name, extract_domain_label, get_client_warmth
 
 
 class ClientWarmthTests(unittest.TestCase):

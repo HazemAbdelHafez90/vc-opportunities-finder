@@ -68,6 +68,9 @@ const insightsFunnelLeak = document.querySelector("#insights-funnel-leak");
 const insightsMarket = document.querySelector("#insights-market");
 const insightsMarketEmpty = document.querySelector("#insights-market-empty");
 const insightsMarketToggles = Array.from(document.querySelectorAll("[data-market-filter]"));
+const reevaluateButton = document.querySelector("#reevaluate-button");
+const reevaluateStatus = document.querySelector("#reevaluate-status");
+const reevaluateResults = document.querySelector("#reevaluate-results");
 const resultsSectionLabel = document.querySelector("#results-section-label");
 const resultsTitle = document.querySelector("#results-title");
 const resultsSummary = document.querySelector("#results-summary");
@@ -140,9 +143,8 @@ const viewTableButton = document.querySelector("#view-table");
 const viewCardsButton = document.querySelector("#view-cards");
 const themeLightButton = document.querySelector("#theme-light");
 const themeDarkButton = document.querySelector("#theme-dark");
-const themeToggleButton = document.querySelector("#theme-toggle");
 const toast = document.querySelector("#toast");
-const DISPLAY_SOURCES = ["ReliefWeb", "UNDP Procurement", "UNGM", "ICIMOD", "Welthungerhilfe"];
+const DISPLAY_SOURCES = ["ReliefWeb", "UNDP Procurement", "UNGM", "Welthungerhilfe", "Plan International", "CAF", "TED", "Find a Tender", "EEAS", "Fairtrade International", "SIMAP"];
 const STORAGE_KEYS = {
   theme: "fairpicture-opportunities-theme",
   view: "fairpicture-opportunities-view",
@@ -210,6 +212,7 @@ appliedTab.addEventListener("click", () => setActiveTab("applied"));
 missedTab.addEventListener("click", () => setActiveTab("missed"));
 deskViewButton.addEventListener("click", () => setActiveTab(lastDeskTab));
 insightsViewButton.addEventListener("click", () => setActiveTab("insights"));
+reevaluateButton.addEventListener("click", handleReevaluateHistory);
 insightsMarketToggles.forEach((button) => {
   button.addEventListener("click", () => {
     insightsMarketFilter = button.dataset.marketFilter === "cold" ? "cold" : "all";
@@ -242,12 +245,6 @@ viewTableButton.addEventListener("click", () => setViewMode("table"));
 viewCardsButton.addEventListener("click", () => setViewMode("cards"));
 themeLightButton.addEventListener("click", () => setTheme("light"));
 themeDarkButton.addEventListener("click", () => setTheme("dark"));
-if (themeToggleButton) {
-  themeToggleButton.addEventListener("click", () => {
-    const current = document.documentElement.dataset.theme || "dark";
-    setTheme(current === "dark" ? "light" : "dark");
-  });
-}
 [
   fitFilter,
   warmthFilter,
@@ -329,7 +326,7 @@ function initCustomDropdowns() {
         }
         li.setAttribute("role", "option");
         li.setAttribute("data-value", option.value);
-        li.innerHTML = `<span class="filter-chip__option-check"><svg viewBox="0 0 12 12" fill="none"><path d="M2 6l3 3 5-5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></span><span>${option.textContent}</span>`;
+        li.innerHTML = `<span class="filter-chip__option-check"><svg class="icon" aria-hidden="true"><use href="#i-check"></use></svg></span><span>${option.textContent}</span>`;
         li.addEventListener("click", () => {
           select.value = option.value;
           ul.querySelectorAll(".filter-chip__option").forEach((item) => {
@@ -1007,7 +1004,7 @@ function renderRecipientChips() {
           aria-label="Remove ${escapeAttribute(chip.value)}"
           ${notificationSettingsBusy ? "disabled" : ""}
         >
-          ×
+          <svg class="icon" aria-hidden="true"><use href="#i-close"></use></svg>
         </button>
       </span>
     `)
@@ -1508,7 +1505,7 @@ function updateDashboardStats(items) {
 
   statTotal.textContent = String(list.length);
   statHighFit.textContent = String(highFitCount);
-  statHighFitSub.textContent = `↑ ${recentHighFitCount} new this week`;
+  statHighFitSub.textContent = `${recentHighFitCount} new this week`;
   statExpiring.textContent = String(expiringSoonCount);
   statApplied.textContent = String(appliedCount);
 }
@@ -1850,7 +1847,7 @@ function renderTable(opportunities) {
           <td data-label="Link">
             ${
               safeLink
-                ? `<a class="result-link result-link--button" href="${safeLink}" target="_blank" rel="noreferrer" data-stop-row-open="true"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M9.5 2H14v4.5h-1.5v-2L7.1 9.9 6 8.8 11.4 3.5h-1.9V2ZM3 4h4v1.5H4.5v6h6V9H12v4H3V4Z"></path></svg><span>Open</span></a>`
+                ? `<a class="result-link result-link--button" href="${safeLink}" target="_blank" rel="noreferrer" data-stop-row-open="true"><svg class="icon" aria-hidden="true"><use href="#i-external"></use></svg><span>Open</span></a>`
                 : '<span class="cell-subtext">No link provided</span>'
             }
           </td>
@@ -1941,7 +1938,7 @@ function renderCards(opportunities) {
           <div class="opportunity-card__footer">
             ${
               safeLink
-                ? `<a class="result-link result-link--button" href="${safeLink}" target="_blank" rel="noreferrer" data-stop-row-open="true"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M9.5 2H14v4.5h-1.5v-2L7.1 9.9 6 8.8 11.4 3.5h-1.9V2ZM3 4h4v1.5H4.5v6h6V9H12v4H3V4Z"></path></svg><span>Open</span></a>`
+                ? `<a class="result-link result-link--button" href="${safeLink}" target="_blank" rel="noreferrer" data-stop-row-open="true"><svg class="icon" aria-hidden="true"><use href="#i-external"></use></svg><span>Open</span></a>`
                 : '<span class="cell-subtext">No link provided</span>'
             }
           </div>
@@ -3007,6 +3004,68 @@ async function loadInsights() {
   }
 }
 
+async function handleReevaluateHistory() {
+  reevaluateButton.disabled = true;
+  reevaluateButton.textContent = "Re-scoring…";
+  reevaluateStatus.hidden = false;
+  reevaluateStatus.dataset.tone = "loading";
+  reevaluateStatus.textContent = "Applying the current fit rules to every stored opportunity.";
+  reevaluateResults.hidden = true;
+
+  try {
+    const response = await fetchWithAuth("/api/re-evaluate", { method: "POST" });
+    const data = await response.json().catch(() => null);
+    if (!response.ok) {
+      throw new Error(data?.error || "Could not re-evaluate stored opportunities.");
+    }
+
+    const items = Array.isArray(data?.items) ? data.items : [];
+    reevaluateStatus.dataset.tone = "success";
+    reevaluateStatus.textContent = `Re-evaluated ${data.count} opportunities. ${data.changedCount} changed and ${data.unchangedCount} stayed the same.`;
+    reevaluateResults.innerHTML = renderReevaluationResults(items);
+    reevaluateResults.hidden = items.length === 0;
+    insightsDataset = null;
+  } catch (error) {
+    reevaluateStatus.dataset.tone = "error";
+    reevaluateStatus.textContent = error.message || "Could not re-evaluate stored opportunities.";
+  } finally {
+    reevaluateButton.disabled = false;
+    reevaluateButton.textContent = "Re-score all opportunities";
+  }
+}
+
+function renderReevaluationResults(items) {
+  if (!items.length) {
+    return "";
+  }
+  const rows = items.map((item) => {
+    const change = Number(item.fitScoreChange) || 0;
+    const changeLabel = change > 0 ? `+${change}` : String(change);
+    const reasons = (Array.isArray(item.fitReasons) ? item.fitReasons : [])
+      .map((reason) => escapeHtml(reason))
+      .join(" · ");
+    const title = escapeHtml(getOpportunityDisplayTitle(item));
+    const organization = escapeHtml(item.organization || "N/A");
+    const oldFit = `${Number(item.previousFitScore) || 0}%`;
+    const newFit = `${Number(item.fitScore) || 0}%`;
+    const titleContent = item.link
+      ? `<a href="${escapeAttribute(item.link)}" target="_blank" rel="noreferrer">${title}</a>`
+      : title;
+    return `<tr>
+      <td><span class="fit-badge fit-badge--${getFitTone(Number(item.fitScore) || 0)}">${newFit}</span></td>
+      <td>${oldFit}</td>
+      <td class="reevaluate-change${change > 0 ? " is-up" : change < 0 ? " is-down" : ""}">${changeLabel}</td>
+      <td><strong>${titleContent}</strong><small>${organization}</small></td>
+      <td>${reasons}</td>
+    </tr>`;
+  }).join("");
+  return `<div class="reevaluate-results__summary">Sorted by the new fit score. Scores are saved to the opportunity records.</div>
+    <div class="reevaluate-results__scroll"><table class="reevaluate-table">
+      <thead><tr><th>New fit</th><th>Old fit</th><th>Change</th><th>Opportunity</th><th>Why it scored this way</th></tr></thead>
+      <tbody>${rows}</tbody>
+    </table></div>`;
+}
+
 function renderInsights() {
   const items = Array.isArray(insightsDataset) ? insightsDataset : [];
 
@@ -3614,12 +3673,8 @@ function setTheme(theme, options = {}) {
   if (themeLightButton && themeDarkButton) {
     themeLightButton.classList.toggle("active", nextTheme === "light");
     themeDarkButton.classList.toggle("active", nextTheme === "dark");
-  }
-
-  if (themeToggleButton) {
-    themeToggleButton.setAttribute("aria-label",
-      nextTheme === "dark" ? "Switch to light mode" : "Switch to dark mode"
-    );
+    themeLightButton.setAttribute("aria-pressed", String(nextTheme === "light"));
+    themeDarkButton.setAttribute("aria-pressed", String(nextTheme === "dark"));
   }
 
   if (options.persist !== false) {

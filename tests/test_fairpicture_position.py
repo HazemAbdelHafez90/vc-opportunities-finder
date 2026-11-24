@@ -1,6 +1,6 @@
 import unittest
 
-from api.fairpicture_position import get_fairpicture_position, normalize_country_name
+from lib.fairpicture_position import get_fairpicture_position, normalize_country_name
 
 
 class FairpicturePositionTests(unittest.TestCase):

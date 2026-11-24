@@ -17,8 +17,8 @@ import xml.etree.ElementTree as ET
 
 from bs4 import BeautifulSoup
 
-from api.client_warmth import get_client_warmth, normalize_lookup_key
-from api.fairpicture_position import get_fairpicture_position
+from lib.client_warmth import get_client_warmth, normalize_lookup_key
+from lib.fairpicture_position import get_fairpicture_position
 
 try:
     import certifi
@@ -40,6 +40,9 @@ TED_SEARCH_URL = "https://api.ted.europa.eu/v3/notices/search"
 TED_NOTICE_PAGE_URL = "https://ted.europa.eu/en/notice/-/detail"
 FIND_A_TENDER_RELEASES_URL = "https://www.find-tender.service.gov.uk/api/1.0/ocdsReleasePackages"
 FIND_A_TENDER_NOTICE_PAGE_URL = "https://www.find-tender.service.gov.uk/Notice"
+EEAS_TENDERS_URL = "https://www.eeas.europa.eu/eeas/tenders_en"
+FAIRTRADE_OPPORTUNITIES_URL = "https://www.fairtrade.net/en/about/opportunities.html"
+SIMAP_PROJECT_SEARCH_URL = "https://www.simap.ch/api/publications/v2/project/project-search"
 CAF_TENDER_INDEX_URLS = [
     "https://www.cafonline.com/inside-caf/about-us/tenders/tenders-tab/",
     "https://www.cafonline.com/en/inside-caf/about-us/tenders/tenders-tab/",
@@ -80,6 +83,9 @@ MANAGED_SOURCES = [
     "CAF",
     "TED",
     "Find a Tender",
+    "EEAS",
+    "Fairtrade International",
+    "SIMAP",
 ]
 
 # Retired: still shown, no longer fetched. ICIMOD contributed one tender in eight
@@ -99,6 +105,9 @@ SOURCE_PRIORITY = {
     "CAF": 7,
     "TED": 8,
     "Find a Tender": 9,
+    "EEAS": 10,
+    "SIMAP": 11,
+    "Fairtrade International": 12,
 }
 # A gateway answering for a server it could not reach -- not an answer about our
 # request, and worth one more attempt before calling the source down.
@@ -616,6 +625,94 @@ def get_managed_opportunities_from_db(limit: int = 5000) -> list[dict[str, Any]]
     return [serialize_opportunity_row(row) for row in rows]
 
 
+def reevaluate_managed_opportunities() -> dict[str, Any]:
+    """Re-score every stored managed opportunity with the current fit rules."""
+    stored_rows: list[dict[str, Any]] = []
+    page_size = 500
+    offset = 0
+    while True:
+        page = supabase_request(
+            "GET",
+            "opportunities",
+            query={
+                "select": (
+                    "id,source,title,organization,countries,deadline,type,link,matched_sources,fit_score,fit_label,"
+                    "fit_reasons,action_status,action_reason,action_notes,action_taken_at,status,first_seen_at,"
+                    "last_synced_at,raw_payload"
+                ),
+                "source": in_filter(MANAGED_SOURCES),
+                "order": "id.asc",
+                "limit": str(page_size),
+                "offset": str(offset),
+            },
+        ) or []
+        stored_rows.extend(page)
+        if len(page) < page_size:
+            break
+        offset += page_size
+
+    updates_by_fit: dict[tuple[int, str, tuple[str, ...]], list[str]] = {}
+    results = []
+    changed_count = 0
+    for row in stored_rows:
+        raw = row.get("raw_payload") if isinstance(row.get("raw_payload"), dict) else {}
+        fit_input = {
+            **raw,
+            "title": row.get("title") or raw.get("title"),
+            "organization": row.get("organization") or raw.get("organization"),
+            "type": row.get("type") or raw.get("type"),
+            "countryList": raw.get("countryList") or row.get("countries") or [],
+            "scope": raw.get("scope") or "",
+        }
+        fit = get_fit_analysis(fit_input)
+        old_score = int(row.get("fit_score") or 0)
+        old_label = row.get("fit_label") or "Low fit"
+        old_reasons = row.get("fit_reasons") or []
+        reasons = tuple(fit["reasons"])
+        key = (fit["score"], fit["label"], reasons)
+        updates_by_fit.setdefault(key, []).append(row["id"])
+        is_changed = (
+            old_score != fit["score"]
+            or old_label != fit["label"]
+            or list(old_reasons) != list(reasons)
+        )
+        changed_count += int(is_changed)
+        serialized_row = {
+            **row,
+            "fit_score": fit["score"],
+            "fit_label": fit["label"],
+            "fit_reasons": list(reasons),
+        }
+        item = serialize_opportunity_row(serialized_row)
+        item["previousFitScore"] = old_score
+        item["previousFitLabel"] = old_label
+        item["fitScoreChange"] = fit["score"] - old_score
+        item["fitChanged"] = is_changed
+        results.append(item)
+
+    for (score, label, reasons), opportunity_ids in updates_by_fit.items():
+        for start in range(0, len(opportunity_ids), 100):
+            supabase_request(
+                "PATCH",
+                "opportunities",
+                query={"id": in_filter(opportunity_ids[start : start + 100], quote=False)},
+                payload={
+                    "fit_score": score,
+                    "fit_label": label,
+                    "fit_reasons": list(reasons),
+                },
+                prefer="return=minimal",
+            )
+
+    results.sort(key=lambda item: (-item["fitScore"], item["title"].lower()))
+    return {
+        "count": len(results),
+        "changedCount": changed_count,
+        "unchangedCount": len(results) - changed_count,
+        "items": results,
+    }
+
+
 def get_latest_sync_run() -> dict[str, Any] | None:
     rows = supabase_request(
         "GET",
@@ -1002,7 +1099,7 @@ def run_refresh_sync(*, triggered_by: str = "manual") -> dict[str, Any]:
         # monitoring can never fail a sync that actually worked.
         health_summary: dict[str, Any] = {"evaluated": 0, "skippedReason": None}
         try:
-            from api.source_monitor import evaluate_sources_after_run
+            from lib.source_monitor import evaluate_sources_after_run
 
             health_summary = evaluate_sources_after_run(
                 sync_run["id"], source_results, now_iso
@@ -1024,7 +1121,7 @@ def run_refresh_sync(*, triggered_by: str = "manual") -> dict[str, Any]:
 
         heartbeat = {"configured": False, "pinged": False}
         try:
-            from api.source_monitor import ping_heartbeat
+            from lib.source_monitor import ping_heartbeat
 
             # "Did the daily job run", not "was every source healthy" -- a single
             # flaky source must not make the uptime monitor cry wolf about a run
@@ -2086,6 +2183,9 @@ def fetch_live_items(appname: str, keywords: list[str]) -> tuple[list[dict[str, 
         ("CAF", fetch_caf_tenders, (keywords,), {}),
         ("TED", fetch_ted_notices, (keywords,), {}),
         ("Find a Tender", fetch_find_a_tender_notices, (keywords,), {}),
+        ("EEAS", fetch_eeas_tenders, (keywords,), {}),
+        ("Fairtrade International", fetch_fairtrade_opportunities, (keywords,), {}),
+        ("SIMAP", fetch_simap_tenders, (keywords,), {}),
     ]
 
     if appname:
@@ -2111,7 +2211,7 @@ def fetch_live_items(appname: str, keywords: list[str]) -> tuple[list[dict[str, 
 
 
 def fetch_source_safely(source_name: str, fetcher, *args, **kwargs) -> dict[str, Any]:
-    from api.source_health import summarize_item_quality
+    from lib.source_health import summarize_item_quality
 
     probe = SourceProbe()
     started_at = datetime.now(timezone.utc)
@@ -2671,6 +2771,209 @@ def fetch_save_the_children_tenders(keywords: list[str]) -> list[dict]:
         items.append(record)
 
     return items
+
+
+def fetch_eeas_tenders(keywords: list[str], probe: SourceProbe | None = None) -> list[dict]:
+    html = request_text(EEAS_TENDERS_URL, probe=probe)
+    soup = BeautifulSoup(html, "html.parser")
+    items: list[dict] = []
+    seen: set[str] = set()
+    fetched = parsed = 0
+    for anchor in soup.select("a[href]"):
+        title = compact_space(anchor.get_text(" ", strip=True))
+        if not title or len(title) < 12:
+            continue
+        url = parse.urljoin(EEAS_TENDERS_URL, compact_space(anchor.get("href"))).split("#", 1)[0]
+        parsed_url = parse.urlparse(url)
+        if parsed_url.netloc not in {"www.eeas.europa.eu", "eeas.europa.eu"}:
+            continue
+        if url in seen:
+            continue
+        # The landing page contains navigation and news. Keep only procurement-like
+        # links or links whose card text labels them as a tender/call.
+        card = anchor.find_parent(["article", "li"]) or anchor.parent
+        card_text = compact_space(card.get_text(" ", strip=True)) if card else title
+        hint = normalize_match_text(f"{title} {card_text} {url}")
+        if not any(term in hint for term in ("tender", "procurement", "call for", "contract", "ex-ante")):
+            continue
+        seen.add(url)
+        fetched += 1
+        # EEAS's index frequently omits the actual response deadline.  The
+        # tender page can instead label it as "Deadline to express your
+        # interest (inscription)", so enrich the card from the notice before
+        # deciding whether it is still open.
+        detail_text = ""
+        try:
+            detail_html = request_text(url, probe=probe)
+            detail_text = compact_space(
+                BeautifulSoup(detail_html, "html.parser").get_text(" ", strip=True)
+            )
+        except Exception:
+            # A single retired or temporarily unavailable notice must not make
+            # the whole EEAS source fail.  Retain the index data in that case.
+            pass
+        scope = compact_space(f"{card_text} {detail_text}")
+        deadline = extract_source_deadline(scope)
+        record = {
+            "title": title,
+            "organization": "European External Action Service",
+            "countryList": [],
+            "deadline": deadline,
+            "type": "Tender",
+            "link": url,
+            "source": "EEAS",
+            "scope": scope,
+        }
+        parsed += 1
+        if deadline and not is_open_deadline(deadline):
+            continue
+        if matches_keywords({**record, "type": f"Tender {scope}"}, keywords):
+            items.append(record)
+    if probe is not None:
+        probe.record(fetched=fetched, parsed=parsed)
+    return items
+
+
+def fetch_fairtrade_opportunities(
+    keywords: list[str], probe: SourceProbe | None = None
+) -> list[dict]:
+    html = request_text(FAIRTRADE_OPPORTUNITIES_URL, probe=probe)
+    soup = BeautifulSoup(html, "html.parser")
+    heading = next(
+        (node for node in soup.select("h1, h2, h3, h4")
+         if "tenders from fairtrade international" in normalize_match_text(node.get_text(" ", strip=True))),
+        None,
+    )
+    if heading is None:
+        if probe is not None:
+            probe.record(fetched=0, parsed=0)
+        return []
+
+    items: list[dict] = []
+    fetched = parsed = 0
+    for sibling in heading.next_siblings:
+        if getattr(sibling, "name", None) in {"h1", "h2", "h3", "h4"}:
+            break
+        anchors = sibling.select("a[href]") if hasattr(sibling, "select") else []
+        for anchor in anchors:
+            title = compact_space(anchor.get_text(" ", strip=True))
+            if not title:
+                continue
+            url = parse.urljoin(FAIRTRADE_OPPORTUNITIES_URL, compact_space(anchor.get("href")))
+            card = anchor.find_parent(["article", "li"]) or anchor.parent
+            scope = compact_space(card.get_text(" ", strip=True)) if card else title
+            fetched += 1
+            deadline = extract_source_deadline(scope)
+            record = {
+                "title": title,
+                "organization": "Fairtrade International",
+                "countryList": [],
+                "deadline": deadline,
+                "type": "Tender / RFP",
+                "link": url,
+                "source": "Fairtrade International",
+                "scope": scope,
+            }
+            parsed += 1
+            if deadline and not is_open_deadline(deadline):
+                continue
+            if matches_keywords({**record, "type": f"Tender / RFP {scope}"}, keywords):
+                items.append(record)
+    if probe is not None:
+        probe.record(fetched=fetched, parsed=parsed)
+    return items
+
+
+def fetch_simap_tenders(keywords: list[str], probe: SourceProbe | None = None) -> list[dict]:
+    # SIMAP's public search API is intentionally queried with broad visual-media
+    # terms: its public UI does not require an account, and the API returns the
+    # source record fields used below without rewriting their notice text.
+    terms = ["video", "photography", "film", "media", "communication", "content"]
+    items: list[dict] = []
+    seen: set[str] = set()
+    fetched = parsed = 0
+    for term in terms:
+        query = parse.urlencode({"search": term, "orderAddressCountryOnlySwitzerland": "true"})
+        payload = json.loads(request_text(f"{SIMAP_PROJECT_SEARCH_URL}?{query}", probe=probe))
+        rows = extract_simap_rows(payload)
+        fetched += len(rows)
+        for row in rows:
+            record = parse_simap_project(row)
+            if not record:
+                continue
+            key = record.get("link") or record["title"]
+            if key in seen:
+                continue
+            seen.add(key)
+            parsed += 1
+            if record["deadline"] and not is_open_deadline(record["deadline"]):
+                continue
+            if matches_keywords({**record, "type": f"{record['type']} {record.get('scope', '')}"}, keywords):
+                items.append(record)
+    if probe is not None:
+        probe.record(fetched=fetched, parsed=parsed)
+    return items
+
+
+def extract_simap_rows(payload: Any) -> list[dict]:
+    if isinstance(payload, list):
+        return [row for row in payload if isinstance(row, dict)]
+    if not isinstance(payload, dict):
+        return []
+    for key in ("content", "results", "items", "projects", "publications", "entries", "data"):
+        value = payload.get(key)
+        if isinstance(value, list):
+            return [row for row in value if isinstance(row, dict)]
+        if isinstance(value, dict):
+            nested = extract_simap_rows(value)
+            if nested:
+                return nested
+    return []
+
+
+def parse_simap_project(row: dict) -> dict | None:
+    def first(*keys: str) -> str:
+        for key in keys:
+            value = row.get(key)
+            if isinstance(value, dict):
+                value = value.get("de") or value.get("en") or value.get("fr") or value.get("it") or next(iter(value.values()), "")
+            if value is not None and not isinstance(value, (dict, list)) and compact_space(str(value)):
+                return compact_space(str(value))
+        return ""
+
+    title = first("title", "projectTitle", "projectName", "publicationTitle", "name")
+    if not title:
+        return None
+    deadline_raw = first("offerDeadline", "submissionDeadline", "deadline", "closingDate", "deadlineDate", "offerSubmissionDeadline")
+    parsed_deadline = parse_date(deadline_raw) if deadline_raw else None
+    deadline = parsed_deadline.date().isoformat() if parsed_deadline else None
+    url = first("url", "publicUrl", "detailUrl", "publicationUrl", "link")
+    url = parse.urljoin("https://www.simap.ch/en", url) if url else "https://www.simap.ch/en"
+    organization = first("organization", "contractingAuthority", "orderer", "buyerName", "client") or "Swiss public authority"
+    scope = first("description", "shortDescription", "scope", "projectDescription", "summary")
+    return {
+        "title": title,
+        "organization": organization,
+        "countryList": ["Switzerland"],
+        "deadline": deadline,
+        "type": first("publicationType", "noticeType", "type") or "Public procurement",
+        "link": url,
+        "source": "SIMAP",
+        "scope": scope,
+    }
+
+
+def extract_source_deadline(value: str) -> str | None:
+    match = re.search(
+        r"(?:deadline|closing date|submission date|submit(?:ted)? by|due date)[^\d]{0,50}(\d{1,2}[./-]\d{1,2}[./-]\d{4}|\d{4}-\d{2}-\d{2}|\d{1,2}\s+[A-Za-z]+\s+\d{4})",
+        value,
+        flags=re.IGNORECASE,
+    )
+    if not match:
+        return None
+    raw = match.group(1).replace(".", "-")
+    parsed_deadline = parse_date(raw)
+    return parsed_deadline.date().isoformat() if parsed_deadline else None
 
 
 def fetch_plan_international_tenders(

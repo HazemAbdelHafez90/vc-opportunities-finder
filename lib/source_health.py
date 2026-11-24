@@ -47,6 +47,9 @@ SPARSE_SOURCE_QUIET_BUSINESS_DAYS = {
     "Welthungerhilfe": 90,
     "Plan International": 90,
     "CAF": 90,
+    "EEAS": 90,
+    "Fairtrade International": 90,
+    "SIMAP": 90,
 }
 HARD_FAIL_HISTORY_RUNS = 30
 INCIDENT_REMINDER_DAYS = 3

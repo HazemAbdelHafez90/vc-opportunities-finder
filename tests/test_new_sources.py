@@ -18,7 +18,7 @@ except Exception:
         sys.modules["bs4"] = bs4_stub
 
 from api import _lib
-from api import source_health as health
+from lib import source_health as health
 
 
 CAF_TENDER_PAGE = """
@@ -28,6 +28,22 @@ CAF_TENDER_PAGE = """
   <div>CAF invites bids for photography services for AFCON 2027 in 6th October City.
   It is required that the supplier is a limited company. Deadline for submission is
   19 December 2026.</div>
+</body></html>
+"""
+
+EEAS_TENDER_INDEX = """
+<html><body>
+  <article>
+    <a href="/eeas/turkiye/example-media-engagement-tender_en">Ex-Ante publication of Call for Tender: Media Engagement and Communication Services</a>
+  </article>
+</body></html>
+"""
+
+EEAS_TENDER_DETAIL = """
+<html><body>
+  <h1>Ex-Ante publication of Call for Tender: Media Engagement and Communication Services</h1>
+  <p>Deadline to express your interest (inscription): 20 November 2026</p>
+  <p>The work includes documentary production and social media campaigns.</p>
 </body></html>
 """
 
@@ -64,6 +80,9 @@ class NewSourceWiringTests(unittest.TestCase):
                 "fetch_caf_tenders",
                 "fetch_ted_notices",
                 "fetch_find_a_tender_notices",
+                "fetch_eeas_tenders",
+                "fetch_fairtrade_opportunities",
+                "fetch_simap_tenders",
             )
         }
         for attr, label in (
@@ -76,6 +95,9 @@ class NewSourceWiringTests(unittest.TestCase):
             ("fetch_caf_tenders", "CAF"),
             ("fetch_ted_notices", "TED"),
             ("fetch_find_a_tender_notices", "Find a Tender"),
+            ("fetch_eeas_tenders", "EEAS"),
+            ("fetch_fairtrade_opportunities", "Fairtrade International"),
+            ("fetch_simap_tenders", "SIMAP"),
         ):
             setattr(_lib, attr, recorder(label))
         try:
@@ -87,6 +109,44 @@ class NewSourceWiringTests(unittest.TestCase):
         self.assertIn("Plan International", fetched)
         self.assertIn("CAF", fetched)
         self.assertCountEqual(fetched, _lib.ACTIVE_SOURCES)
+
+
+class EaasDeadlineParsingTests(unittest.TestCase):
+    def test_parses_the_interest_deadline_wording_used_by_eeas(self):
+        self.assertEqual(
+            _lib.extract_source_deadline(
+                "Deadline to express your interest (inscription): 20 November 2026"
+            ),
+            "2026-11-20",
+        )
+
+
+@unittest.skipUnless(HAS_BS4, "needs a real beautifulsoup4")
+class EaasDeadlineTests(unittest.TestCase):
+    def test_reads_interest_deadline_from_the_tender_detail_page(self):
+        """EEAS puts this deadline on the notice, not consistently on its index."""
+        original = _lib.request_text
+
+        def fake_request_text(url, data=None, headers=None, probe=None):
+            if url == _lib.EEAS_TENDERS_URL:
+                return EEAS_TENDER_INDEX
+            return EEAS_TENDER_DETAIL
+
+        _lib.request_text = fake_request_text
+        try:
+            # Use a date before the example deadline so the open-item filter
+            # does not intentionally discard it.
+            original_is_open = _lib.is_open_deadline
+            _lib.is_open_deadline = lambda value: True
+            try:
+                items = _lib.fetch_eeas_tenders(["documentary"])
+            finally:
+                _lib.is_open_deadline = original_is_open
+        finally:
+            _lib.request_text = original
+
+        self.assertEqual(len(items), 1)
+        self.assertEqual(items[0]["deadline"], "2026-11-20")
 
 
 class CafDetailPathTests(unittest.TestCase):

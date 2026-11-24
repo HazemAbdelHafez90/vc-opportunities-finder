@@ -3,28 +3,45 @@
    Built on the Fairpicture design system.
    https://fairpicture-design-system.vercel.app/
 
+   Token layer mirrored from the live stylesheet on 2026-11-06
+   (/_next/static/css/d59a2a619e96fcbd.css, 260 custom properties).
+   The design system republished its tokens with numbered ramps
+   (`brand-50…950`, `neutral-0…1000`, one ramp per status hue) and
+   new semantic groups: `state-*`, `interactive-*`, `indicator-*`,
+   `accent-*`. Those names are reproduced here verbatim.
+
    Rules followed here:
    - Product code consumes SEMANTIC tokens only. Every literal
      colour lives in the primitive block below and nowhere else.
    - One brand colour (Fairpicture red). Status colours signal
      status, never decoration.
    - Warm neutrals only. GT Cinetype only. Small radii.
+   - Type is set with a NAMED style (H1–H4 / Body / Body SM /
+     Label / Caption), never a bare font-size. Headings step down
+     one size below 768px, exactly as the design system does.
+
+   Legacy aliases: this file predates the republished vocabulary
+   and ~3,000 lines below still consume the old names
+   (`--colour-primary-default`, `--font-size-sm`, `--radius-md`).
+   Section 1b re-points every one of them at the new primitives so
+   the vocabulary is consistent rather than half-migrated, and no
+   component rule carries a stale value.
 
    Dark mode note: the design system publishes a light palette
-   only. The dark map below is derived, not ratified — the
-   `--colour-dark-*` primitives interpolate the warm neutral ramp
-   below `neutral-dark`, and two tokens are deliberately lifted
-   for contrast on dark (`primary-on-dark` for brand text and the
-   focus ring, `status-info-on-dark`). Using the published values
-   there would drop brand links to 3.8:1 and make the mandatory
-   focus ring invisible. Worth raising with design.
-
-   `text-tertiary` is defined for completeness but not consumed: it resolves to
-   `neutral-75`, which is 3.07:1 on white and fails AA for text under 18.66px.
-   Everything that would have used it is small functional text, so it uses
-   `text-secondary` (5.0:1 light / 9.3:1 dark) instead. Also worth raising.
+   only. The dark map below is derived, not ratified — but it is
+   now derived from PUBLISHED primitives (`neutral-900/950/1000`,
+   `brand-300/400`) rather than invented ones. Two tokens are
+   deliberately lifted for contrast on dark (`brand-400` for brand
+   text and `info-400` for info text). Using the published values
+   there would drop brand links to 3.8:1 and fail AA. Still worth
+   raising with design.
    ============================================================ */
 
+/* GT Cinetype ships Regular 400 and Bold 700 only — the design
+   system site itself serves just those two faces. The Label and
+   subheading styles ask for Semibold 600; CSS weight matching
+   resolves 600 against the 700 face, which is what the site
+   renders too. No synthesised weight is introduced. */
 @font-face {
   font-family: "GT Cinetype";
   src: url("./fonts/GT-Cinetype-Regular.woff2") format("woff2"),
@@ -53,84 +70,279 @@
 }
 
 /* ------------------------------------------------------------
-   1. Primitives — define semantic tokens, never consumed directly
+   1. Primitives — published ramps. Define semantic tokens with
+      these; never consume them directly in a component rule.
    ------------------------------------------------------------ */
 
 :root {
-  --colour-primary-default: #d0343a;
-  --colour-primary-dark: #952227;
-  --colour-primary-light: #faeaeb;
-  --colour-primary-tint: #d0343a1a;
-  --colour-primary-tint-strong: #d0343a2e;
+  /* ---- Brand ---- */
+  --colour-brand-50: #faeaeb;
+  --colour-brand-100: #f8d7d7;
+  --colour-brand-200: #f2b2af;
+  --colour-brand-300: #ea8c88;
+  --colour-brand-400: #de6461;
+  --colour-brand-500: #d0343a;
+  --colour-brand-600: #b22b30;
+  --colour-brand-700: #952227;
+  --colour-brand-800: #6d181b;
+  --colour-brand-900: #480e10;
+  --colour-brand-950: #36090b;
+  --colour-brand-alpha-10: #d0343a1a;
+  --colour-brand-700-alpha-30: #9522274d;
 
-  --colour-neutral-darkest: #0d0d0d;
-  --colour-neutral-dark: #333333;
-  --colour-neutral-100: #776e64;
-  --colour-neutral-75: #99928b;
-  --colour-neutral-50: #bbb6b1;
-  --colour-neutral-25: #dddbd8;
-  --colour-neutral-20: #eeedeb;
-  --colour-neutral-15: #fafaf9;
-  --colour-neutral-white: #ffffff;
-  --colour-neutral-overlay: #0d0d0d73;
+  /* ---- Neutral — warm ramp ---- */
+  --colour-neutral-0: #ffffff;
+  --colour-neutral-50: #fafaf9;
+  --colour-neutral-100: #eeedeb;
+  --colour-neutral-200: #dddbd8;
+  --colour-neutral-300: #ccc8c4;
+  --colour-neutral-400: #bbb6b1;
+  --colour-neutral-500: #99928b;
+  --colour-neutral-600: #776e64;
+  --colour-neutral-700: #54504b;
+  --colour-neutral-800: #333333;
+  --colour-neutral-900: #1f1f1f;
+  --colour-neutral-950: #161616;
+  --colour-neutral-1000: #0d0d0d;
+  --colour-neutral-500-alpha-27: #99928b45;
+  --colour-neutral-1000-alpha-45: #0d0d0d73;
 
-  --colour-status-success: #48975e;
-  --colour-status-success-dark: #366e46;
-  --colour-status-success-light: #48975e1a;
-  --colour-status-error: #d85252;
-  --colour-status-error-dark: #8b2020;
-  --colour-status-error-light: #d852521a;
-  --colour-status-info: #214f91;
-  --colour-status-info-light: #214f911a;
-  --colour-status-warning: #e3ac3c;
-  --colour-status-warning-dark: #b27e15;
-  --colour-status-warning-light: #e3ac3c1a;
+  /* ---- Status ramps ---- */
+  --colour-success-50: #edf5ef;
+  --colour-success-100: #dbeade;
+  --colour-success-200: #b7d5bd;
+  --colour-success-300: #93c19d;
+  --colour-success-400: #6fac7d;
+  --colour-success-500: #48975e;
+  --colour-success-600: #3f8252;
+  --colour-success-700: #366e46;
+  --colour-success-800: #264f33;
+  --colour-success-900: #173321;
+  --colour-success-950: #102518;
+  --colour-success-500-alpha-10: #48975e1a;
 
-  /* Dark-mode extensions — warm ramp continued below neutral-dark */
-  --colour-dark-canvas: #131211;
-  --colour-dark-surface: #1a1817;
-  --colour-dark-elevated: #201d1b;
-  --colour-dark-raised: #2a2724;
-  --colour-dark-line: #302c29;
-  --colour-dark-line-strong: #423c37;
-  --colour-dark-overlay: #0a0908b8;
-  --colour-primary-on-dark: #e8656a;
-  --colour-status-info-on-dark: #6fa0dc;
-  --colour-status-error-on-dark: #e27171;
+  --colour-error-50: #fbeeee;
+  --colour-error-100: #f9dddc;
+  --colour-error-200: #f4bcb9;
+  --colour-error-300: #ed9a96;
+  --colour-error-400: #e47874;
+  --colour-error-500: #d85252;
+  --colour-error-600: #b13939;
+  --colour-error-650: #9e2c2c;
+  --colour-error-700: #8b2020;
+  --colour-error-800: #651616;
+  --colour-error-900: #420c0c;
+  --colour-error-950: #310808;
+  --colour-error-500-alpha-10: #d852521a;
+
+  --colour-warning-50: #fcf7eb;
+  --colour-warning-100: #faefda;
+  --colour-warning-200: #f4dfb7;
+  --colour-warning-300: #efce92;
+  --colour-warning-400: #e9bd6c;
+  --colour-warning-500: #e3ac3c;
+  --colour-warning-600: #ca952a;
+  --colour-warning-700: #b27e15;
+  --colour-warning-750: #8f6310;
+  --colour-warning-800: #7d570e;
+  --colour-warning-900: #4c3407;
+  --colour-warning-950: #352304;
+  --colour-warning-500-alpha-10: #e3ac3c1a;
+
+  --colour-info-50: #e9edf4;
+  --colour-info-100: #d9e0ed;
+  --colour-info-200: #b9c7de;
+  --colour-info-300: #99afcf;
+  --colour-info-400: #7b97c0;
+  --colour-info-500: #5d7fb1;
+  --colour-info-600: #3f67a1;
+  --colour-info-700: #214f91;
+  --colour-info-800: #16396b;
+  --colour-info-900: #0c2548;
+  --colour-info-950: #071b37;
+  --colour-info-700-alpha-10: #214f911a;
 
   /* ---- Type ---- */
-  --font-family-base: "GT Cinetype", system-ui, sans-serif;
-  --font-family-mono: "GT Cinetype Mono", ui-monospace, monospace;
-  --font-size-xs: 12px;
-  --font-size-sm: 14px;
-  --font-size-base: 16px;
-  --font-size-lg: 18px;
-  --font-size-xl: 20px;
-  --font-size-2xl: 24px;
-  --font-size-3xl: 30px;
-  --font-size-4xl: 36px;
-  --font-weight-regular: 400;
-  --font-weight-bold: 700;
-  --letter-spacing-default: 0px;
-  --letter-spacing-wide: 0.5px;
+  --typography-font-family-base: "GT Cinetype";
+  --typography-font-family-mono: "GT Cinetype Mono";
+  --typography-font-size-xs: 12px;
+  --typography-font-size-sm: 14px;
+  --typography-font-size-base: 16px;
+  --typography-font-size-lg: 18px;
+  --typography-font-size-xl: 20px;
+  --typography-font-size-2xl: 24px;
+  --typography-font-size-3xl: 30px;
+  --typography-font-size-4xl: 36px;
+  --typography-font-weight-regular: 400;
+  --typography-font-weight-semibold: 600;
+  --typography-font-weight-bold: 700;
+  --typography-tracking-normal: 0px;
+  --typography-tracking-wide: 0.5px;
+  --typography-letter-spacing-default: var(--typography-tracking-normal);
+  --typography-letter-spacing-wide: var(--typography-tracking-wide);
+  --typography-line-height-18: 18px;
+  --typography-line-height-21: 21px;
+  --typography-line-height-23: 23px;
+  --typography-line-height-25: 25px;
+  --typography-line-height-26: 26px;
+  --typography-line-height-30: 30px;
+  --typography-line-height-33: 33px;
+  --typography-line-height-40: 40px;
 
-  /* ---- Radius ---- */
-  --radius-none: 0px;
-  --radius-sm: 4px;
-  --radius-md: 8px;
-  --radius-lg: 12px;
-  --radius-full: 9999px;
+  /* Named styles — desktop. The mobile step-down is in section 3b. */
+  --typography-size-heading-h1: var(--typography-font-size-4xl);
+  --typography-size-heading-h2: var(--typography-font-size-3xl);
+  --typography-size-heading-h3: var(--typography-font-size-2xl);
+  --typography-size-heading-h4: var(--typography-font-size-xl);
+  --typography-size-body-default: var(--typography-font-size-base);
+  --typography-size-body-sm: var(--typography-font-size-sm);
+  --typography-size-label: var(--typography-font-size-sm);
+  --typography-size-caption: var(--typography-font-size-xs);
+  --typography-line-height-heading-h1: var(--typography-line-height-40);
+  --typography-line-height-heading-h2: var(--typography-line-height-33);
+  --typography-line-height-heading-h3: var(--typography-line-height-30);
+  --typography-line-height-heading-h4: var(--typography-line-height-25);
+  --typography-line-height-body-default: var(--typography-line-height-26);
+  --typography-line-height-body-sm: var(--typography-line-height-21);
+  --typography-line-height-label: var(--typography-line-height-18);
+  --typography-line-height-caption: var(--typography-line-height-18);
+  --typography-weight-heading: var(--typography-font-weight-bold);
+  --typography-weight-subheading: var(--typography-font-weight-semibold);
+  --typography-weight-body: var(--typography-font-weight-regular);
 
-  /* ---- Shadow ---- */
-  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.08), 0 1px 2px rgba(0, 0, 0, 0.06);
-  --shadow-md: 0 4px 8px -2px rgba(0, 0, 0, 0.1), 0 2px 4px -2px rgba(0, 0, 0, 0.06);
-  --shadow-lg: 0 12px 24px -4px rgba(0, 0, 0, 0.1), 0 4px 8px -2px rgba(0, 0, 0, 0.06);
-  --shadow-brand: 0 4px 26px rgba(208, 52, 58, 0.15);
+  /* ---- Spacing — 4px scale ---- */
+  --spacing-0: 0px;
+  --spacing-0-5: 2px;
+  --spacing-1: 4px;
+  --spacing-1-5: 6px;
+  --spacing-2: 8px;
+  --spacing-2-5: 10px;
+  --spacing-3: 12px;
+  --spacing-3-5: 14px;
+  --spacing-4: 16px;
+  --spacing-5: 20px;
+  --spacing-6: 24px;
+  --spacing-7: 28px;
+  --spacing-8: 32px;
+  --spacing-10: 40px;
+  --spacing-12: 48px;
+  --spacing-16: 64px;
+  --spacing-20: 80px;
+  --spacing-padding-xs: var(--spacing-2);
+  --spacing-padding-sm: var(--spacing-3);
+  --spacing-padding-md: var(--spacing-4);
+  --spacing-padding-lg: var(--spacing-6);
+  --spacing-padding-button-sm: var(--spacing-1-5);
+  --spacing-padding-button-md: var(--spacing-2-5);
+  --spacing-component-gap-xs: var(--spacing-1);
+  --spacing-component-gap-sm: var(--spacing-2);
+  --spacing-component-gap-md: var(--spacing-3);
+  --spacing-component-gap-lg: var(--spacing-4);
+  --spacing-layout-section: var(--spacing-12);
+  --spacing-layout-page: var(--spacing-12);
+
+  /* ---- Radius — assigned, not chosen ---- */
+  --border-radius-none: 0px;
+  --border-radius-sm: 4px;
+  --border-radius-md: 8px;
+  --border-radius-lg: 12px;
+  --border-radius-xl: 16px;
+  --border-radius-full: 9999px;
+
+  /* ---- Breakpoints (documentation; media queries inline them) ---- */
+  --breakpoints-sm: 640px;
+  --breakpoints-md: 768px;
+  --breakpoints-lg: 1024px;
+  --breakpoints-xl: 1280px;
+  --breakpoints-2xl: 1536px;
+
+  /* ---- Shadow + elevation ---- */
+  --shadow-sm: 0px 1px 3px 0px rgba(0, 0, 0, 0.08), 0px 1px 2px 0px rgba(0, 0, 0, 0.06);
+  --shadow-md: 0px 4px 8px -2px rgba(0, 0, 0, 0.1), 0px 2px 4px -2px rgba(0, 0, 0, 0.06);
+  --shadow-lg: 0px 12px 24px -4px rgba(0, 0, 0, 0.1), 0px 4px 8px -2px rgba(0, 0, 0, 0.06);
+  --shadow-brand: 0px 4px 26px 0px #d0343a26;
+  --shadow-inset: inset 0px 2px 2px 0px rgba(0, 0, 0, 0.05), inset 0px 1px 1px 0px rgba(0, 0, 0, 0.02);
+  --elevation-raised: var(--shadow-sm);
+  --elevation-floating: var(--shadow-md);
+  --elevation-overlay: var(--shadow-lg);
+  --elevation-brand: var(--shadow-brand);
+  --elevation-inset: var(--shadow-inset);
 
   /* ---- Motion — restrained, colour and opacity only ---- */
   --motion-fast: 120ms;
   --motion-base: 180ms;
   --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+/* ------------------------------------------------------------
+   1b. Legacy aliases — the vocabulary this file was written in,
+       re-pointed at the published ramps. Nothing below section 4
+       needs to change for a token to stay correct.
+   ------------------------------------------------------------ */
+
+:root {
+  --font-family-base: var(--typography-font-family-base), system-ui, sans-serif;
+  --font-family-mono: var(--typography-font-family-mono), ui-monospace, monospace;
+  --font-size-xs: var(--typography-font-size-xs);
+  --font-size-sm: var(--typography-font-size-sm);
+  --font-size-base: var(--typography-font-size-base);
+  --font-size-lg: var(--typography-font-size-lg);
+  --font-size-xl: var(--typography-font-size-xl);
+  --font-size-2xl: var(--typography-font-size-2xl);
+  --font-size-3xl: var(--typography-font-size-3xl);
+  --font-size-4xl: var(--typography-font-size-4xl);
+  --font-weight-regular: var(--typography-font-weight-regular);
+  --font-weight-semibold: var(--typography-font-weight-semibold);
+  --font-weight-bold: var(--typography-font-weight-bold);
+  --letter-spacing-default: var(--typography-letter-spacing-default);
+  --letter-spacing-wide: var(--typography-letter-spacing-wide);
+
+  --radius-none: var(--border-radius-none);
+  --radius-sm: var(--border-radius-sm);
+  --radius-md: var(--border-radius-md);
+  --radius-lg: var(--border-radius-lg);
+  --radius-xl: var(--border-radius-xl);
+  --radius-full: var(--border-radius-full);
+
+  --colour-primary-default: var(--colour-brand-500);
+  --colour-primary-dark: var(--colour-brand-700);
+  --colour-primary-light: var(--colour-brand-50);
+  --colour-primary-tint: var(--colour-brand-alpha-10);
+  --colour-primary-tint-strong: var(--colour-brand-700-alpha-30);
+  --colour-primary-on-dark: var(--colour-brand-400);
+
+  --colour-neutral-white: var(--colour-neutral-0);
+  --colour-neutral-15: var(--colour-neutral-50);
+  --colour-neutral-20: var(--colour-neutral-100);
+  --colour-neutral-25: var(--colour-neutral-200);
+  --colour-neutral-75: var(--colour-neutral-500);
+  --colour-neutral-dark: var(--colour-neutral-800);
+  --colour-neutral-darkest: var(--colour-neutral-1000);
+  --colour-neutral-overlay: var(--colour-neutral-1000-alpha-45);
+
+  --colour-status-success: var(--colour-success-500);
+  --colour-status-success-dark: var(--colour-success-700);
+  --colour-status-success-light: var(--colour-success-500-alpha-10);
+  --colour-status-error: var(--colour-error-500);
+  --colour-status-error-dark: var(--colour-error-700);
+  --colour-status-error-light: var(--colour-error-500-alpha-10);
+  --colour-status-error-on-dark: var(--colour-error-400);
+  --colour-status-info: var(--colour-info-700);
+  --colour-status-info-light: var(--colour-info-700-alpha-10);
+  --colour-status-info-on-dark: var(--colour-info-400);
+  --colour-status-warning: var(--colour-warning-500);
+  --colour-status-warning-dark: var(--colour-warning-750);
+  --colour-status-warning-light: var(--colour-warning-500-alpha-10);
+
+  /* Dark-surface aliases. The published ramp now reaches far enough
+     down that these are plain primitives, not invented values. */
+  --colour-dark-canvas: var(--colour-neutral-950);
+  --colour-dark-surface: var(--colour-neutral-900);
+  --colour-dark-elevated: var(--colour-neutral-900);
+  --colour-dark-raised: var(--colour-neutral-800);
+  --colour-dark-line: var(--colour-neutral-800);
+  --colour-dark-line-strong: var(--colour-neutral-700);
+  --colour-dark-overlay: var(--colour-neutral-1000-alpha-45);
 }
 
 /* ------------------------------------------------------------
@@ -141,105 +353,209 @@
 html[data-theme="dark"] {
   color-scheme: dark;
 
-  --colour-background-page: var(--colour-dark-canvas);
-  --colour-background-surface: var(--colour-dark-surface);
-  --colour-background-elevated: var(--colour-dark-elevated);
-  --colour-background-raised: var(--colour-dark-raised);
-  --colour-background-brand: var(--colour-primary-default);
-  --colour-background-brand-hover: var(--colour-primary-dark);
-  --colour-background-brand-subtle: var(--colour-primary-tint-strong);
-  --colour-background-brand-tint: var(--colour-primary-tint);
-  --colour-background-success: var(--colour-status-success-light);
-  --colour-background-error: var(--colour-status-error-light);
-  --colour-background-info: var(--colour-status-info-light);
-  --colour-background-warning: var(--colour-status-warning-light);
-  --colour-background-overlay: var(--colour-dark-overlay);
-  --colour-background-disabled: var(--colour-dark-raised);
+  --colour-background-page: var(--colour-neutral-1000);
+  --colour-background-surface: var(--colour-neutral-950);
+  --colour-background-surface-subtle: var(--colour-neutral-1000);
+  --colour-background-surface-strong: var(--colour-neutral-800);
+  --colour-background-elevated: var(--colour-neutral-900);
+  --colour-background-raised: var(--colour-neutral-800);
+  --colour-background-brand: var(--colour-brand-500);
+  --colour-background-brand-hover: var(--colour-brand-600);
+  --colour-background-brand-pressed: var(--colour-brand-700);
+  --colour-background-brand-subtle: var(--colour-brand-700-alpha-30);
+  --colour-background-brand-subtle-hover: var(--colour-brand-800);
+  --colour-background-brand-tint: var(--colour-brand-alpha-10);
+  --colour-background-success: var(--colour-success-500-alpha-10);
+  --colour-background-error: var(--colour-error-500-alpha-10);
+  --colour-background-info: var(--colour-info-700-alpha-10);
+  --colour-background-warning: var(--colour-warning-500-alpha-10);
+  --colour-background-overlay: var(--colour-neutral-1000-alpha-45);
+  --colour-background-disabled: var(--colour-neutral-800);
+  --colour-background-selection: var(--colour-neutral-500-alpha-27);
 
-  --colour-text-primary: var(--colour-neutral-15);
-  --colour-text-secondary: var(--colour-neutral-50);
-  --colour-text-tertiary: var(--colour-neutral-75);
-  --colour-text-disabled: var(--colour-neutral-100);
-  --colour-text-placeholder: var(--colour-neutral-75);
-  --colour-text-brand: var(--colour-primary-on-dark);
-  --colour-text-brand-hover: var(--colour-primary-light);
-  --colour-text-on-brand: var(--colour-neutral-white);
-  --colour-text-success: var(--colour-status-success);
-  --colour-text-error: var(--colour-status-error-on-dark);
-  --colour-text-info: var(--colour-status-info-on-dark);
-  --colour-text-warning: var(--colour-status-warning);
+  --colour-state-success-background: var(--colour-success-500-alpha-10);
+  --colour-state-success-foreground: var(--colour-success-400);
+  --colour-state-error-background: var(--colour-error-500-alpha-10);
+  --colour-state-error-foreground: var(--colour-error-400);
+  --colour-state-warning-background: var(--colour-warning-500-alpha-10);
+  --colour-state-warning-foreground: var(--colour-warning-400);
+  --colour-state-info-background: var(--colour-info-700-alpha-10);
+  --colour-state-info-foreground: var(--colour-info-400);
 
-  --colour-border-subtle: var(--colour-dark-line);
-  --colour-border-default: var(--colour-dark-line-strong);
-  --colour-border-strong: var(--colour-neutral-100);
-  --colour-border-brand: var(--colour-primary-default);
-  --colour-border-focus-ring: var(--colour-primary-on-dark);
-  --colour-border-success: var(--colour-status-success);
-  --colour-border-error: var(--colour-status-error);
-  --colour-border-warning: var(--colour-status-warning);
+  --colour-text-primary: var(--colour-neutral-50);
+  --colour-text-secondary: var(--colour-neutral-400);
+  --colour-text-tertiary: var(--colour-neutral-500);
+  --colour-text-disabled: var(--colour-neutral-600);
+  --colour-text-placeholder: var(--colour-neutral-500);
+  --colour-text-brand: var(--colour-brand-400);
+  --colour-text-brand-hover: var(--colour-brand-300);
+  --colour-text-on-brand: var(--colour-neutral-0);
+  --colour-text-on-status: var(--colour-neutral-0);
+  --colour-text-success: var(--colour-state-success-foreground);
+  --colour-text-error: var(--colour-state-error-foreground);
+  --colour-text-info: var(--colour-state-info-foreground);
+  --colour-text-warning: var(--colour-state-warning-foreground);
 
-  --colour-icon-default: var(--colour-neutral-15);
-  --colour-icon-muted: var(--colour-neutral-75);
-  --colour-icon-brand: var(--colour-primary-on-dark);
-  --colour-icon-on-brand: var(--colour-neutral-white);
-  --colour-icon-success: var(--colour-status-success);
-  --colour-icon-error: var(--colour-status-error);
-  --colour-icon-info: var(--colour-status-info-on-dark);
-  --colour-icon-warning: var(--colour-status-warning);
+  --colour-border-subtle: var(--colour-neutral-800);
+  --colour-border-default: var(--colour-neutral-700);
+  --colour-border-strong: var(--colour-neutral-600);
+  --colour-border-disabled: var(--colour-neutral-800);
+  --colour-border-brand: var(--colour-brand-500);
+  --colour-border-focus-ring: var(--colour-brand-400);
+  --colour-border-success: var(--colour-state-success-foreground);
+  --colour-border-error: var(--colour-state-error-foreground);
+  --colour-border-warning: var(--colour-state-warning-foreground);
+  --colour-border-info: var(--colour-state-info-foreground);
+
+  --colour-icon-default: var(--colour-neutral-50);
+  --colour-icon-muted: var(--colour-neutral-500);
+  --colour-icon-brand: var(--colour-brand-400);
+  --colour-icon-on-brand: var(--colour-neutral-0);
+  --colour-icon-success: var(--colour-state-success-foreground);
+  --colour-icon-error: var(--colour-state-error-foreground);
+  --colour-icon-info: var(--colour-state-info-foreground);
+  --colour-icon-warning: var(--colour-state-warning-foreground);
+
+  --colour-accent-success: var(--colour-state-success-foreground);
+  --colour-accent-error: var(--colour-state-error-foreground);
+  --colour-accent-warning: var(--colour-state-warning-foreground);
+  --colour-accent-info: var(--colour-state-info-foreground);
+
+  --colour-interactive-brand-default: var(--colour-brand-500);
+  --colour-interactive-brand-hover: var(--colour-brand-400);
+  --colour-interactive-brand-pressed: var(--colour-brand-300);
+  --colour-interactive-neutral-default: var(--colour-neutral-50);
+  --colour-interactive-neutral-hover: var(--colour-neutral-0);
+  --colour-interactive-neutral-pressed: var(--colour-neutral-200);
+  --colour-interactive-destructive-default: var(--colour-error-400);
+  --colour-interactive-destructive-hover: var(--colour-error-300);
+  --colour-interactive-destructive-pressed: var(--colour-error-200);
+
+  --colour-indicator-active: var(--colour-brand-500);
+  --colour-indicator-default: var(--colour-neutral-500);
+  --colour-indicator-neutral: var(--colour-neutral-500);
+  --colour-indicator-disabled: var(--colour-neutral-700);
+  --colour-indicator-track: var(--colour-neutral-800);
+  --colour-indicator-success: var(--colour-success-500);
+  --colour-indicator-error: var(--colour-error-500);
+  --colour-indicator-warning: var(--colour-warning-500);
+  --colour-indicator-info: var(--colour-state-info-foreground);
 }
 
 /* ------------------------------------------------------------
-   3. Semantic tokens — light (the published design system map)
+   3. Semantic tokens — light (the published design system map,
+      reproduced token for token)
    ------------------------------------------------------------ */
 
 html[data-theme="light"] {
   color-scheme: light;
 
-  --colour-background-page: var(--colour-neutral-15);
-  --colour-background-surface: var(--colour-neutral-20);
-  --colour-background-elevated: var(--colour-neutral-white);
-  --colour-background-raised: var(--colour-neutral-25);
-  --colour-background-brand: var(--colour-primary-default);
-  --colour-background-brand-hover: var(--colour-primary-dark);
-  --colour-background-brand-subtle: var(--colour-primary-light);
-  --colour-background-brand-tint: var(--colour-primary-tint);
-  --colour-background-success: var(--colour-status-success-light);
-  --colour-background-error: var(--colour-status-error-light);
-  --colour-background-info: var(--colour-status-info-light);
-  --colour-background-warning: var(--colour-status-warning-light);
-  --colour-background-overlay: var(--colour-neutral-overlay);
-  --colour-background-disabled: var(--colour-neutral-20);
+  --colour-background-page: var(--colour-neutral-50);
+  --colour-background-surface: var(--colour-neutral-100);
+  --colour-background-surface-subtle: var(--colour-neutral-50);
+  --colour-background-surface-strong: var(--colour-neutral-200);
+  --colour-background-elevated: var(--colour-neutral-0);
+  --colour-background-raised: var(--colour-neutral-200);
+  --colour-background-brand: var(--colour-brand-500);
+  --colour-background-brand-hover: var(--colour-brand-700);
+  --colour-background-brand-pressed: var(--colour-brand-800);
+  --colour-background-brand-subtle: var(--colour-brand-50);
+  --colour-background-brand-subtle-hover: var(--colour-brand-100);
+  --colour-background-brand-tint: var(--colour-brand-alpha-10);
+  --colour-background-success: var(--colour-state-success-background);
+  --colour-background-error: var(--colour-state-error-background);
+  --colour-background-info: var(--colour-state-info-background);
+  --colour-background-warning: var(--colour-state-warning-background);
+  --colour-background-overlay: var(--colour-neutral-1000-alpha-45);
+  --colour-background-disabled: var(--colour-neutral-100);
+  --colour-background-selection: var(--colour-neutral-500-alpha-27);
 
-  --colour-text-primary: var(--colour-neutral-dark);
-  --colour-text-secondary: var(--colour-neutral-100);
-  --colour-text-tertiary: var(--colour-neutral-75);
-  --colour-text-disabled: var(--colour-neutral-50);
-  --colour-text-placeholder: var(--colour-neutral-50);
-  --colour-text-brand: var(--colour-primary-default);
-  --colour-text-brand-hover: var(--colour-primary-dark);
-  --colour-text-on-brand: var(--colour-neutral-white);
-  --colour-text-success: var(--colour-status-success-dark);
-  --colour-text-error: var(--colour-status-error-dark);
-  --colour-text-info: var(--colour-status-info);
-  --colour-text-warning: var(--colour-status-warning-dark);
+  --colour-state-success-background: var(--colour-success-50);
+  --colour-state-success-foreground: var(--colour-success-700);
+  --colour-state-error-background: var(--colour-error-50);
+  --colour-state-error-foreground: var(--colour-error-650);
+  --colour-state-warning-background: var(--colour-warning-50);
+  --colour-state-warning-foreground: var(--colour-warning-750);
+  --colour-state-info-background: var(--colour-info-50);
+  --colour-state-info-foreground: var(--colour-info-700);
 
-  --colour-border-subtle: var(--colour-neutral-25);
-  --colour-border-default: var(--colour-neutral-50);
-  --colour-border-strong: var(--colour-neutral-100);
-  --colour-border-brand: var(--colour-primary-default);
-  --colour-border-focus-ring: var(--colour-primary-dark);
-  --colour-border-success: var(--colour-status-success);
-  --colour-border-error: var(--colour-status-error);
-  --colour-border-warning: var(--colour-status-warning);
+  --colour-text-primary: var(--colour-neutral-800);
+  --colour-text-secondary: var(--colour-neutral-700);
+  --colour-text-tertiary: var(--colour-neutral-600);
+  --colour-text-disabled: var(--colour-neutral-400);
+  --colour-text-placeholder: var(--colour-neutral-400);
+  --colour-text-brand: var(--colour-brand-500);
+  --colour-text-brand-hover: var(--colour-brand-700);
+  --colour-text-on-brand: var(--colour-neutral-0);
+  --colour-text-on-status: var(--colour-neutral-0);
+  --colour-text-success: var(--colour-state-success-foreground);
+  --colour-text-error: var(--colour-state-error-foreground);
+  --colour-text-info: var(--colour-state-info-foreground);
+  --colour-text-warning: var(--colour-state-warning-foreground);
 
-  --colour-icon-default: var(--colour-neutral-dark);
-  --colour-icon-muted: var(--colour-neutral-75);
-  --colour-icon-brand: var(--colour-primary-default);
-  --colour-icon-on-brand: var(--colour-neutral-white);
-  --colour-icon-success: var(--colour-status-success);
-  --colour-icon-error: var(--colour-status-error);
-  --colour-icon-info: var(--colour-status-info);
-  --colour-icon-warning: var(--colour-status-warning);
+  --colour-border-subtle: var(--colour-neutral-200);
+  --colour-border-default: var(--colour-neutral-400);
+  --colour-border-strong: var(--colour-neutral-600);
+  --colour-border-disabled: var(--colour-neutral-200);
+  --colour-border-brand: var(--colour-brand-500);
+  --colour-border-focus-ring: var(--colour-brand-700);
+  --colour-border-success: var(--colour-state-success-foreground);
+  --colour-border-error: var(--colour-state-error-foreground);
+  --colour-border-warning: var(--colour-state-warning-foreground);
+  --colour-border-info: var(--colour-state-info-foreground);
+
+  --colour-icon-default: var(--colour-neutral-800);
+  --colour-icon-muted: var(--colour-neutral-500);
+  --colour-icon-brand: var(--colour-brand-500);
+  --colour-icon-on-brand: var(--colour-neutral-0);
+  --colour-icon-success: var(--colour-state-success-foreground);
+  --colour-icon-error: var(--colour-state-error-foreground);
+  --colour-icon-info: var(--colour-state-info-foreground);
+  --colour-icon-warning: var(--colour-state-warning-foreground);
+
+  --colour-accent-success: var(--colour-state-success-foreground);
+  --colour-accent-error: var(--colour-state-error-foreground);
+  --colour-accent-warning: var(--colour-state-warning-foreground);
+  --colour-accent-info: var(--colour-state-info-foreground);
+
+  --colour-interactive-brand-default: var(--colour-brand-500);
+  --colour-interactive-brand-hover: var(--colour-brand-700);
+  --colour-interactive-brand-pressed: var(--colour-brand-800);
+  --colour-interactive-neutral-default: var(--colour-neutral-800);
+  --colour-interactive-neutral-hover: var(--colour-neutral-900);
+  --colour-interactive-neutral-pressed: var(--colour-neutral-1000);
+  --colour-interactive-destructive-default: var(--colour-error-700);
+  --colour-interactive-destructive-hover: var(--colour-error-800);
+  --colour-interactive-destructive-pressed: var(--colour-error-900);
+
+  --colour-indicator-active: var(--colour-brand-500);
+  --colour-indicator-default: var(--colour-neutral-600);
+  --colour-indicator-neutral: var(--colour-neutral-600);
+  --colour-indicator-disabled: var(--colour-neutral-300);
+  --colour-indicator-track: var(--colour-neutral-100);
+  --colour-indicator-success: var(--colour-success-500);
+  --colour-indicator-error: var(--colour-error-500);
+  --colour-indicator-warning: var(--colour-warning-700);
+  --colour-indicator-info: var(--colour-state-info-foreground);
+}
+
+/* ------------------------------------------------------------
+   3b. Mobile — headings step down one size, page gutter narrows.
+       Copied from the design system's own @media (max-width: 767px).
+   ------------------------------------------------------------ */
+
+@media (max-width: 767px) {
+  :root {
+    --typography-size-heading-h1: var(--typography-font-size-3xl);
+    --typography-size-heading-h2: var(--typography-font-size-2xl);
+    --typography-size-heading-h3: var(--typography-font-size-xl);
+    --typography-size-heading-h4: var(--typography-font-size-lg);
+    --typography-line-height-heading-h1: var(--typography-line-height-33);
+    --typography-line-height-heading-h2: var(--typography-line-height-26);
+    --typography-line-height-heading-h3: var(--typography-line-height-25);
+    --typography-line-height-heading-h4: var(--typography-line-height-23);
+    --spacing-layout-page: var(--spacing-4);
+  }
 }
 
 /* ------------------------------------------------------------
@@ -255,12 +571,17 @@ html {
   transition: background-color var(--motion-base) var(--ease-out);
 }
 
+/* Body SM is the desk's working size: this screen is a dense table, and
+   Body/Default at 16/26 pushes a third of the rows below the fold. Both are
+   published styles; the heading scale is unchanged. */
 body {
   margin: 0;
   min-height: 100vh;
   font-family: var(--font-family-base);
-  font-size: var(--font-size-sm);
-  line-height: 1.5;
+  font-size: var(--typography-size-body-sm);
+  line-height: var(--typography-line-height-body-sm);
+  font-weight: var(--typography-weight-body);
+  letter-spacing: var(--typography-letter-spacing-default);
   background: var(--colour-background-page);
   color: var(--colour-text-primary);
   -webkit-font-smoothing: antialiased;
@@ -287,15 +608,74 @@ body {
   border: 0;
 }
 
+/* ---- Named type styles ----------------------------------------------
+   The published scale: H1-H4 / Body / Body SM / Label / Caption. Each
+   carries its own line-height, so nothing sets a bare font-size. Headings
+   step down one size below 768px via the tokens in section 3b. */
+
 h1,
 h2,
 h3,
-.headline {
+h4,
+.headline,
+.type-h1,
+.type-h2,
+.type-h3,
+.type-h4 {
   font-family: var(--font-family-base);
-  font-weight: var(--font-weight-bold);
-  letter-spacing: var(--letter-spacing-default);
-  line-height: 1.25;
+  font-weight: var(--typography-weight-heading);
+  letter-spacing: var(--typography-letter-spacing-default);
   margin: 0;
+}
+
+h1,
+.headline,
+.type-h1 {
+  font-size: var(--typography-size-heading-h1);
+  line-height: var(--typography-line-height-heading-h1);
+}
+
+h2,
+.type-h2 {
+  font-size: var(--typography-size-heading-h2);
+  line-height: var(--typography-line-height-heading-h2);
+}
+
+h3,
+.type-h3 {
+  font-size: var(--typography-size-heading-h3);
+  line-height: var(--typography-line-height-heading-h3);
+}
+
+h4,
+.type-h4 {
+  font-size: var(--typography-size-heading-h4);
+  line-height: var(--typography-line-height-heading-h4);
+}
+
+.type-body {
+  font-size: var(--typography-size-body-default);
+  line-height: var(--typography-line-height-body-default);
+  font-weight: var(--typography-weight-body);
+}
+
+.type-body-sm {
+  font-size: var(--typography-size-body-sm);
+  line-height: var(--typography-line-height-body-sm);
+  font-weight: var(--typography-weight-body);
+}
+
+.type-label {
+  font-size: var(--typography-size-label);
+  line-height: var(--typography-line-height-label);
+  font-weight: var(--typography-weight-subheading);
+  letter-spacing: var(--typography-letter-spacing-wide);
+}
+
+.type-caption {
+  font-size: var(--typography-size-caption);
+  line-height: var(--typography-line-height-caption);
+  font-weight: var(--typography-weight-body);
 }
 
 p {
@@ -314,6 +694,34 @@ a {
   color: inherit;
 }
 
+/* ---- Icons ----------------------------------------------------------
+   One library: the design system's own set, inlined as a <symbol> sprite at
+   the top of the document. Every glyph declares currentColor on its own
+   fill/stroke, so an icon simply takes the text colour of whatever wraps it —
+   nothing here may set fill or stroke. Sizes follow platform convention:
+   16px inline with text, 18-20px for a standalone affordance. */
+.icon-sprite {
+  position: absolute;
+  width: 0;
+  height: 0;
+  overflow: hidden;
+}
+
+.icon {
+  width: var(--icon-size, 16px);
+  height: var(--icon-size, 16px);
+  flex: none;
+  display: block;
+}
+
+.icon--sm {
+  --icon-size: 14px;
+}
+
+.icon--lg {
+  --icon-size: 20px;
+}
+
 /* One focus treatment for the whole app. Never removed without a replacement. */
 :where(a, button, input, select, textarea, summary, [tabindex]):focus-visible {
   outline: 2px solid var(--colour-border-focus-ring);
@@ -329,25 +737,27 @@ a {
 .detail-form-field > span,
 .detail-modal__meta dt,
 .notification-settings__field span {
-  font-size: var(--font-size-xs);
-  line-height: 1.2;
-  letter-spacing: var(--letter-spacing-wide);
-  font-weight: var(--font-weight-bold);
+  font-size: var(--typography-size-caption);
+  line-height: var(--typography-line-height-caption);
+  letter-spacing: var(--typography-letter-spacing-wide);
+  font-weight: var(--typography-weight-subheading);
   color: var(--colour-text-secondary);
   margin: 0;
 }
 
+/* Page-header description: Body SM, text-secondary, capped at 896px. */
 .panel-summary {
   color: var(--colour-text-secondary);
-  line-height: 1.55;
-  max-width: 68ch;
+  font-size: var(--typography-size-body-sm);
+  line-height: var(--typography-line-height-body-sm);
+  max-width: 896px;
 }
 
 .cell-subtext,
 .opportunity-subline {
   color: var(--colour-text-secondary);
-  font-size: var(--font-size-xs);
-  line-height: 1.45;
+  font-size: var(--typography-size-caption);
+  line-height: var(--typography-line-height-caption);
 }
 
 /* ------------------------------------------------------------
@@ -365,9 +775,9 @@ a {
   border-radius: var(--radius-sm);
   background: var(--colour-background-brand);
   color: var(--colour-text-on-brand);
-  font-size: var(--font-size-base);
+  font-size: var(--typography-size-body-default);
   font-weight: var(--font-weight-bold);
-  line-height: 21px;
+  line-height: var(--typography-line-height-body-default);
   letter-spacing: var(--letter-spacing-wide);
   cursor: pointer;
   transition: background-color var(--motion-fast) var(--ease-out),
@@ -381,7 +791,8 @@ a {
 
 .primary-button--small {
   padding: 6px 12px;
-  font-size: var(--font-size-sm);
+  font-size: var(--typography-size-body-sm);
+  line-height: var(--typography-line-height-body-sm);
 }
 
 .primary-button:disabled,
@@ -413,7 +824,8 @@ a {
   border: 1px solid var(--colour-border-subtle);
   background: var(--colour-background-surface);
   color: var(--colour-text-secondary);
-  font-size: var(--font-size-sm);
+  font-size: var(--typography-size-body-sm);
+  line-height: var(--typography-line-height-body-sm);
   text-decoration: none;
   cursor: pointer;
   transition: border-color var(--motion-fast) var(--ease-out),
@@ -437,10 +849,8 @@ a {
   padding: 6px;
 }
 
-.icon-button svg {
-  width: 16px;
-  height: 16px;
-  fill: currentColor;
+.icon-button .icon {
+  --icon-size: 18px;
 }
 
 .result-link {
@@ -455,7 +865,8 @@ a {
 
 .result-link--button {
   padding: 4px 8px;
-  font-size: var(--font-size-xs);
+  font-size: var(--typography-size-caption);
+  line-height: var(--typography-line-height-caption);
   color: var(--colour-text-secondary);
 }
 
@@ -463,10 +874,8 @@ a {
   text-decoration: none;
 }
 
-.result-link--button svg {
-  width: 11px;
-  height: 11px;
-  fill: currentColor;
+.result-link--button .icon {
+  --icon-size: 14px;
 }
 
 /* ------------------------------------------------------------
@@ -489,7 +898,8 @@ a {
 }
 
 .boot-shell__panel h1 {
-  font-size: var(--font-size-2xl);
+  font-size: var(--typography-size-heading-h3);
+  line-height: var(--typography-line-height-heading-h3);
   margin: 8px 0;
 }
 
@@ -555,29 +965,25 @@ a {
   gap: 10px;
 }
 
-.brand-wordmark__mark {
-  width: 28px;
-  height: 28px;
-  display: grid;
-  place-items: center;
-  border: 1.5px solid var(--colour-border-brand);
-  border-radius: var(--radius-sm);
+/* The published wordmark, never redrawn and never recoloured. Minimum width
+   for the full logo is 120px; this sits at 180px. The primary (red) variant is
+   for light backgrounds, the secondary (reversed) for dark. */
+.brand-wordmark__logo {
+  display: block;
+  width: 180px;
+  height: auto;
 }
 
-.brand-wordmark__mark svg {
-  width: 18px;
-  height: 18px;
-  stroke: var(--colour-icon-brand);
-  fill: none;
-  stroke-width: 1.6;
-  stroke-linecap: round;
+.brand-wordmark__logo--primary {
+  display: none;
 }
 
-.brand-wordmark__text {
-  font-size: var(--font-size-sm);
-  font-weight: var(--font-weight-bold);
-  letter-spacing: var(--letter-spacing-wide);
-  color: var(--colour-text-primary);
+html[data-theme="light"] .brand-wordmark__logo--primary {
+  display: block;
+}
+
+html[data-theme="light"] .brand-wordmark__logo--reversed {
+  display: none;
 }
 
 .auth-hero {
@@ -589,7 +995,8 @@ a {
   align-items: center;
   gap: 10px;
   margin-bottom: 20px;
-  font-size: var(--font-size-xs);
+  font-size: var(--typography-size-caption);
+  line-height: var(--typography-line-height-caption);
   font-weight: var(--font-weight-bold);
   letter-spacing: var(--letter-spacing-wide);
   color: var(--colour-text-secondary);
@@ -602,8 +1009,8 @@ a {
 }
 
 .auth-shell__brand h1 {
-  font-size: var(--font-size-4xl);
-  line-height: 1.15;
+  font-size: var(--typography-size-heading-h1);
+  line-height: var(--typography-line-height-heading-h1);
   color: var(--colour-text-primary);
   margin-bottom: 16px;
 }
@@ -616,8 +1023,8 @@ a {
 .auth-shell__summary {
   max-width: 60ch;
   margin-bottom: 40px;
-  font-size: var(--font-size-base);
-  line-height: 1.6;
+  font-size: var(--typography-size-body-default);
+  line-height: var(--typography-line-height-body-default);
   color: var(--colour-text-secondary);
 }
 
@@ -636,7 +1043,8 @@ a {
   border-radius: var(--radius-full);
   background: var(--colour-background-elevated);
   border: 1px solid var(--colour-border-subtle);
-  font-size: var(--font-size-xs);
+  font-size: var(--typography-size-caption);
+  line-height: var(--typography-line-height-caption);
   color: var(--colour-text-secondary);
 }
 
@@ -670,7 +1078,8 @@ a {
 
 .auth-stats strong {
   display: block;
-  font-size: var(--font-size-2xl);
+  font-size: var(--typography-size-heading-h3);
+  line-height: var(--typography-line-height-heading-h3);
   font-weight: var(--font-weight-bold);
   color: var(--colour-text-primary);
   margin-bottom: 6px;
@@ -678,13 +1087,15 @@ a {
 
 .auth-stats span {
   display: block;
-  font-size: var(--font-size-xs);
+  font-size: var(--typography-size-caption);
+  line-height: var(--typography-line-height-caption);
   letter-spacing: var(--letter-spacing-wide);
   color: var(--colour-text-secondary);
 }
 
 .auth-shell__footnote {
-  font-size: var(--font-size-xs);
+  font-size: var(--typography-size-caption);
+  line-height: var(--typography-line-height-caption);
   color: var(--colour-text-secondary);
 }
 
@@ -710,21 +1121,23 @@ a {
   border: 1px solid var(--colour-border-subtle);
   background: var(--colour-background-surface);
   color: var(--colour-text-secondary);
-  font-size: var(--font-size-xs);
+  font-size: var(--typography-size-caption);
+  line-height: var(--typography-line-height-caption);
   font-weight: var(--font-weight-bold);
   letter-spacing: var(--letter-spacing-wide);
 }
 
 .auth-shell__panel h2 {
-  font-size: var(--font-size-2xl);
+  font-size: var(--typography-size-heading-h3);
+  line-height: var(--typography-line-height-heading-h3);
   color: var(--colour-text-primary);
   margin-bottom: 8px;
 }
 
 .auth-form__subline,
 .auth-shell__message {
-  font-size: var(--font-size-sm);
-  line-height: 1.55;
+  font-size: var(--typography-size-body-sm);
+  line-height: var(--typography-line-height-body-sm);
   color: var(--colour-text-secondary);
 }
 
@@ -745,7 +1158,8 @@ a {
 
 .auth-shell__message {
   margin-top: 24px;
-  font-size: var(--font-size-xs);
+  font-size: var(--typography-size-caption);
+  line-height: var(--typography-line-height-caption);
   color: var(--colour-text-secondary);
   text-align: center;
 }
@@ -786,7 +1200,8 @@ a {
   border: 1px solid var(--colour-border-subtle);
   background: var(--colour-background-surface);
   color: var(--colour-text-primary);
-  font-size: var(--font-size-sm);
+  font-size: var(--typography-size-body-sm);
+  line-height: var(--typography-line-height-body-sm);
   transition: border-color var(--motion-fast) var(--ease-out),
     background-color var(--motion-fast) var(--ease-out);
 }
@@ -815,7 +1230,8 @@ textarea::placeholder {
 
 .detail-form-field__hint,
 .field-help {
-  font-size: var(--font-size-xs);
+  font-size: var(--typography-size-caption);
+  line-height: var(--typography-line-height-caption);
   color: var(--colour-text-secondary);
 }
 
@@ -842,7 +1258,8 @@ textarea::placeholder {
 }
 
 .unit-input__suffix {
-  font-size: var(--font-size-xs);
+  font-size: var(--typography-size-caption);
+  line-height: var(--typography-line-height-caption);
   color: var(--colour-text-secondary);
 }
 
@@ -886,27 +1303,19 @@ textarea::placeholder {
   min-width: 0;
 }
 
+/* The square app-icon variant, background baked in — the same artwork as the
+   favicon, so the tab and the header agree. Minimum symbol size is 24px. */
 .app-bar__mark {
   width: 28px;
   height: 28px;
   flex-shrink: 0;
-  display: grid;
-  place-items: center;
-  border: 1.5px solid var(--colour-border-brand);
+  display: block;
   border-radius: var(--radius-sm);
 }
 
-.app-bar__mark svg {
-  width: 18px;
-  height: 18px;
-  stroke: var(--colour-icon-brand);
-  fill: none;
-  stroke-width: 1.6;
-  stroke-linecap: round;
-}
-
 .app-bar__title {
-  font-size: var(--font-size-lg);
+  font-size: var(--typography-size-heading-h4);
+  line-height: var(--typography-line-height-heading-h4);
   color: var(--colour-text-primary);
 }
 
@@ -916,7 +1325,8 @@ textarea::placeholder {
   gap: 10px;
   flex-wrap: wrap;
   margin-top: 3px;
-  font-size: var(--font-size-xs);
+  font-size: var(--typography-size-caption);
+  line-height: var(--typography-line-height-caption);
   color: var(--colour-text-secondary);
 }
 
@@ -929,7 +1339,8 @@ textarea::placeholder {
   background: var(--colour-background-surface);
   color: var(--colour-text-secondary);
   font-family: var(--font-family-mono);
-  font-size: var(--font-size-xs);
+  font-size: var(--typography-size-caption);
+  line-height: var(--typography-line-height-caption);
   letter-spacing: var(--letter-spacing-wide);
 }
 
@@ -939,6 +1350,9 @@ textarea::placeholder {
   justify-content: flex-end;
   gap: 8px;
   flex-wrap: wrap;
+  /* When this group moves to its own flex line, keep it attached to the
+     right edge of the header instead of leaving an empty trailing column. */
+  margin-left: auto;
 }
 
 .auth-user {
@@ -950,7 +1364,8 @@ textarea::placeholder {
 
 .auth-user__email {
   color: var(--colour-text-secondary);
-  font-size: var(--font-size-xs);
+  font-size: var(--typography-size-caption);
+  line-height: var(--typography-line-height-caption);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -1000,7 +1415,7 @@ textarea::placeholder {
 .stat__value {
   grid-row: 1 / 3;
   align-self: center;
-  font-size: var(--font-size-3xl);
+  font-size: var(--typography-size-heading-h2);
   font-weight: var(--font-weight-bold);
   line-height: 1;
   color: var(--colour-text-primary);
@@ -1016,8 +1431,18 @@ textarea::placeholder {
 
 .stat__sub {
   grid-column: 2;
-  font-size: var(--font-size-xs);
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  font-size: var(--typography-size-caption);
+  line-height: var(--typography-line-height-caption);
   color: var(--colour-text-secondary);
+}
+
+/* Direction only — the figure beside it carries the magnitude. */
+.stat__trend {
+  --icon-size: 14px;
+  color: var(--colour-icon-success);
 }
 
 .stat__label {
@@ -1051,13 +1476,15 @@ textarea::placeholder {
 
 .notification-settings__status {
   color: var(--colour-text-secondary);
-  font-size: var(--font-size-xs);
+  font-size: var(--typography-size-caption);
+  line-height: var(--typography-line-height-caption);
 }
 
 .settings-strip__edit {
   flex-shrink: 0;
   color: var(--colour-text-brand);
-  font-size: var(--font-size-xs);
+  font-size: var(--typography-size-caption);
+  line-height: var(--typography-line-height-caption);
   font-weight: var(--font-weight-bold);
 }
 
@@ -1089,7 +1516,8 @@ textarea::placeholder {
   border-bottom: 2px solid transparent;
   background: transparent;
   color: var(--colour-text-secondary);
-  font-size: var(--font-size-sm);
+  font-size: var(--typography-size-body-sm);
+  line-height: var(--typography-line-height-body-sm);
   cursor: pointer;
   transition: color var(--motion-fast) var(--ease-out),
     border-color var(--motion-fast) var(--ease-out);
@@ -1112,7 +1540,8 @@ textarea::placeholder {
   border-radius: var(--radius-full);
   background: var(--colour-background-surface);
   color: var(--colour-text-secondary);
-  font-size: var(--font-size-xs);
+  font-size: var(--typography-size-caption);
+  line-height: var(--typography-line-height-caption);
   font-weight: var(--font-weight-regular);
 }
 
@@ -1131,12 +1560,14 @@ textarea::placeholder {
 }
 
 .results-header h2 {
-  font-size: var(--font-size-base);
+  font-size: var(--typography-size-body-default);
+  line-height: var(--typography-line-height-body-default);
   color: var(--colour-text-primary);
 }
 
 .results-header .panel-summary {
-  font-size: var(--font-size-xs);
+  font-size: var(--typography-size-caption);
+  line-height: var(--typography-line-height-caption);
   color: var(--colour-text-secondary);
   margin-top: 2px;
 }
@@ -1155,15 +1586,12 @@ textarea::placeholder {
   min-width: 220px;
 }
 
-.toolbar-search svg {
+.toolbar-search .icon {
   position: absolute;
-  left: 11px;
+  left: 10px;
   top: 50%;
-  width: 14px;
-  height: 14px;
-  stroke: var(--colour-icon-muted);
-  fill: none;
-  stroke-width: 1.6;
+  --icon-size: 16px;
+  color: var(--colour-icon-muted);
   transform: translateY(-50%);
   pointer-events: none;
 }
@@ -1180,12 +1608,13 @@ textarea::placeholder {
   transform: translateY(-50%);
   width: 24px;
   height: 24px;
+  display: grid;
+  place-items: center;
   border: 0;
   border-radius: var(--radius-full);
   background: transparent;
-  color: var(--colour-text-secondary);
+  color: var(--colour-icon-muted);
   cursor: pointer;
-  line-height: 1;
 }
 
 .search-clear-button:hover {
@@ -1206,7 +1635,8 @@ textarea::placeholder {
   border: 1px solid var(--colour-border-subtle);
   background: var(--colour-background-surface);
   color: var(--colour-text-secondary);
-  font-size: var(--font-size-xs);
+  font-size: var(--typography-size-caption);
+  line-height: var(--typography-line-height-caption);
   cursor: pointer;
   white-space: nowrap;
   transition: border-color var(--motion-fast) var(--ease-out),
@@ -1228,12 +1658,13 @@ textarea::placeholder {
   color: var(--colour-text-brand);
 }
 
-.filter-chip summary svg {
-  width: 10px;
-  height: 10px;
-  stroke: currentColor;
-  fill: none;
-  stroke-width: 1.6;
+.filter-chip summary .icon {
+  --icon-size: 14px;
+  color: var(--colour-icon-muted);
+}
+
+.filter-chip--active summary .icon {
+  color: inherit;
 }
 
 .filter-chip__panel {
@@ -1267,7 +1698,8 @@ textarea::placeholder {
   gap: 8px;
   padding: 7px 10px;
   border-radius: var(--radius-sm);
-  font-size: var(--font-size-sm);
+  font-size: var(--typography-size-body-sm);
+  line-height: var(--typography-line-height-body-sm);
   color: var(--colour-text-secondary);
   cursor: pointer;
   user-select: none;
@@ -1297,9 +1729,8 @@ textarea::placeholder {
   color: currentColor;
 }
 
-.filter-chip__option-check svg {
-  width: 12px;
-  height: 12px;
+.filter-chip__option-check .icon {
+  --icon-size: 14px;
 }
 
 .filter-chip__option--selected .filter-chip__option-check {
@@ -1314,7 +1745,8 @@ textarea::placeholder {
 }
 
 .results-filter-summary {
-  font-size: var(--font-size-xs);
+  font-size: var(--typography-size-caption);
+  line-height: var(--typography-line-height-caption);
   color: var(--colour-text-secondary);
   white-space: nowrap;
 }
@@ -1340,10 +1772,8 @@ textarea::placeholder {
     color var(--motion-fast) var(--ease-out);
 }
 
-.display-toggle svg {
-  width: 15px;
-  height: 15px;
-  fill: currentColor;
+.display-toggle .icon {
+  --icon-size: 18px;
 }
 
 .display-toggle.active {
@@ -1358,7 +1788,8 @@ textarea::placeholder {
   border: 1px solid var(--colour-border-subtle);
   background: var(--colour-background-surface);
   color: var(--colour-text-secondary);
-  font-size: var(--font-size-xs);
+  font-size: var(--typography-size-caption);
+  line-height: var(--typography-line-height-caption);
 }
 
 .message-box.error {
@@ -1396,7 +1827,8 @@ thead th {
   text-align: left;
   background: var(--colour-background-surface);
   border-bottom: 1px solid var(--colour-border-subtle);
-  font-size: var(--font-size-xs);
+  font-size: var(--typography-size-caption);
+  line-height: var(--typography-line-height-caption);
   font-weight: var(--font-weight-bold);
   letter-spacing: var(--letter-spacing-wide);
   color: var(--colour-text-secondary);
@@ -1404,6 +1836,9 @@ thead th {
 
 /* Sortable and non-sortable headers must read as one row. */
 .table-sort-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
   border: 0;
   padding: 0;
   background: transparent;
@@ -1423,8 +1858,28 @@ thead th {
   color: var(--colour-text-brand);
 }
 
-.table-sort-button.active::after {
-  content: " ↓";
+/* The sort indicator is the published sortAscending / sortDescending icon, not
+   a text arrow. Both live in one fixed slot so a header never changes width
+   when the direction flips. */
+.table-sort-button__sort {
+  position: relative;
+  display: inline-block;
+  width: 14px;
+  height: 14px;
+  flex: none;
+}
+
+.table-sort-button__icon {
+  position: absolute;
+  inset: 0;
+  --icon-size: 14px;
+  opacity: 0;
+  transition: opacity var(--motion-fast) var(--ease-out);
+}
+
+.table-sort-button[data-direction="asc"] .table-sort-button__icon--asc,
+.table-sort-button[data-direction="desc"] .table-sort-button__icon--desc {
+  opacity: 1;
 }
 
 tbody tr {
@@ -1440,7 +1895,8 @@ tbody td {
   padding: 11px 12px;
   color: var(--colour-text-secondary);
   vertical-align: top;
-  font-size: var(--font-size-xs);
+  font-size: var(--typography-size-caption);
+  line-height: var(--typography-line-height-caption);
 }
 
 .placeholder-row td {
@@ -1456,8 +1912,8 @@ tbody td {
   margin: 0 0 3px;
   max-width: 52ch;
   color: var(--colour-text-primary);
-  font-size: var(--font-size-sm);
-  line-height: 1.4;
+  font-size: var(--typography-size-body-sm);
+  line-height: var(--typography-line-height-body-sm);
   display: -webkit-box;
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
@@ -1467,12 +1923,14 @@ tbody td {
 .source-tag {
   display: inline-flex;
   color: var(--colour-text-secondary);
-  font-size: var(--font-size-xs);
+  font-size: var(--typography-size-caption);
+  line-height: var(--typography-line-height-caption);
   white-space: nowrap;
 }
 
 .deadline-cell {
-  font-size: var(--font-size-xs);
+  font-size: var(--typography-size-caption);
+  line-height: var(--typography-line-height-caption);
   white-space: nowrap;
 }
 
@@ -1505,7 +1963,8 @@ tbody td {
   padding: 2px 8px;
   border-radius: var(--radius-sm);
   border: 1px solid transparent;
-  font-size: var(--font-size-xs);
+  font-size: var(--typography-size-caption);
+  line-height: var(--typography-line-height-caption);
   font-weight: var(--font-weight-bold);
   letter-spacing: var(--letter-spacing-wide);
   white-space: nowrap;
@@ -1579,7 +2038,8 @@ tbody td {
   background: transparent;
   color: var(--colour-text-secondary);
   font-weight: var(--font-weight-regular);
-  font-size: var(--font-size-xs);
+  font-size: var(--typography-size-caption);
+  line-height: var(--typography-line-height-caption);
   padding-left: 0;
 }
 
@@ -1692,8 +2152,8 @@ tbody td {
 
 .opportunity-card__body h3 {
   margin-top: 12px;
-  font-size: var(--font-size-sm);
-  line-height: 1.4;
+  font-size: var(--typography-size-body-sm);
+  line-height: var(--typography-line-height-body-sm);
   color: var(--colour-text-primary);
   display: -webkit-box;
   -webkit-line-clamp: 3;
@@ -1714,13 +2174,15 @@ tbody td {
 
 .opportunity-card__meta dt {
   margin-bottom: 2px;
-  font-size: var(--font-size-xs);
+  font-size: var(--typography-size-caption);
+  line-height: var(--typography-line-height-caption);
   color: var(--colour-text-secondary);
 }
 
 .opportunity-card__meta dd {
   margin: 0;
-  font-size: var(--font-size-xs);
+  font-size: var(--typography-size-caption);
+  line-height: var(--typography-line-height-caption);
   color: var(--colour-text-secondary);
 }
 
@@ -1744,7 +2206,8 @@ tbody td {
 
 .pagination-summary,
 .pagination-page {
-  font-size: var(--font-size-xs);
+  font-size: var(--typography-size-caption);
+  line-height: var(--typography-line-height-caption);
   color: var(--colour-text-secondary);
 }
 
@@ -1801,14 +2264,16 @@ tbody td {
 
 .sources-drawer__header h2,
 .settings-modal__header h3 {
-  font-size: var(--font-size-lg);
+  font-size: var(--typography-size-heading-h4);
+  line-height: var(--typography-line-height-heading-h4);
   color: var(--colour-text-primary);
   margin: 4px 0 4px;
 }
 
 .sources-drawer__header .panel-summary,
 .settings-modal__header .panel-summary {
-  font-size: var(--font-size-xs);
+  font-size: var(--typography-size-caption);
+  line-height: var(--typography-line-height-caption);
   color: var(--colour-text-secondary);
 }
 
@@ -1819,23 +2284,24 @@ tbody td {
 }
 
 .blocked-source-card h3 {
-  font-size: var(--font-size-sm);
+  font-size: var(--typography-size-body-sm);
   color: var(--colour-text-primary);
-  line-height: 1.4;
+  line-height: var(--typography-line-height-body-sm);
   margin: 0 0 6px;
 }
 
 .blocked-source-card p {
   margin: 0 0 8px;
-  font-size: var(--font-size-xs);
+  font-size: var(--typography-size-caption);
   color: var(--colour-text-secondary);
-  line-height: 1.5;
+  line-height: var(--typography-line-height-caption);
 }
 
 .blocked-source-card .result-link {
   align-self: flex-start;
   margin-top: 4px;
-  font-size: var(--font-size-xs);
+  font-size: var(--typography-size-caption);
+  line-height: var(--typography-line-height-caption);
 }
 
 .source-health {
@@ -1854,7 +2320,8 @@ tbody td {
   border: 1px solid var(--colour-border-subtle);
   background: var(--colour-background-surface);
   color: var(--colour-text-secondary);
-  font-size: var(--font-size-xs);
+  font-size: var(--typography-size-caption);
+  line-height: var(--typography-line-height-caption);
 }
 
 .source-health-pill strong,
@@ -1928,7 +2395,8 @@ tbody td {
 
 .detail-modal__kicker {
   margin: 0;
-  font-size: var(--font-size-xs);
+  font-size: var(--typography-size-caption);
+  line-height: var(--typography-line-height-caption);
   letter-spacing: var(--letter-spacing-wide);
   color: var(--colour-text-secondary);
 }
@@ -1971,25 +2439,16 @@ tbody td {
   margin-left: 6px;
 }
 
-.detail-icon-button svg,
-.detail-state-button svg,
-.detail-open-button svg,
-.detail-secondary-button svg,
-.detail-modal__info svg {
-  width: 14px;
-  height: 14px;
-  fill: none;
-  stroke: currentColor;
-  stroke-width: 1.7;
-  stroke-linecap: round;
-  stroke-linejoin: round;
+.detail-icon-button .icon,
+.detail-state-button .icon,
+.detail-open-button .icon,
+.detail-secondary-button .icon,
+.detail-modal__info .icon {
+  --icon-size: 16px;
 }
 
-.detail-open-button svg path,
-.detail-secondary-button svg path,
-.detail-modal__info svg path {
-  fill: currentColor;
-  stroke: none;
+.detail-icon-button .icon {
+  --icon-size: 18px;
 }
 
 .detail-modal__title-block {
@@ -2001,15 +2460,16 @@ tbody td {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
-  font-size: var(--font-size-xs);
+  font-size: var(--typography-size-caption);
+  line-height: var(--typography-line-height-caption);
   color: var(--colour-text-secondary);
 }
 
 .detail-modal__title-block h2 {
   margin: 0;
   color: var(--colour-text-primary);
-  font-size: var(--font-size-xl);
-  line-height: 1.3;
+  font-size: var(--typography-size-heading-h4);
+  line-height: var(--typography-line-height-heading-h4);
 }
 
 .detail-modal__meta-row {
@@ -2029,12 +2489,14 @@ tbody td {
   border: 1px solid var(--colour-border-subtle);
   background: var(--colour-background-surface);
   color: var(--colour-text-secondary);
-  font-size: var(--font-size-xs);
+  font-size: var(--typography-size-caption);
+  line-height: var(--typography-line-height-caption);
 }
 
 .detail-open-button {
   margin-left: auto;
-  font-size: var(--font-size-xs);
+  font-size: var(--typography-size-caption);
+  line-height: var(--typography-line-height-caption);
   padding: 4px 10px;
 }
 
@@ -2059,7 +2521,8 @@ tbody td {
 
 .detail-meta-cell dd {
   margin: 4px 0 0;
-  font-size: var(--font-size-sm);
+  font-size: var(--typography-size-body-sm);
+  line-height: var(--typography-line-height-body-sm);
   color: var(--colour-text-primary);
 }
 
@@ -2075,7 +2538,8 @@ tbody td {
 
 .detail-meta-cell dd small {
   color: var(--colour-text-secondary);
-  font-size: var(--font-size-xs);
+  font-size: var(--typography-size-caption);
+  line-height: var(--typography-line-height-caption);
 }
 
 /* Evidence panels. Neutral by default; they only take colour when
@@ -2104,7 +2568,8 @@ tbody td {
 }
 
 .position-evidence--empty .position-evidence__header h3 {
-  font-size: var(--font-size-sm);
+  font-size: var(--typography-size-body-sm);
+  line-height: var(--typography-line-height-body-sm);
 }
 
 .position-evidence__header {
@@ -2117,14 +2582,15 @@ tbody td {
 .position-evidence__header h3 {
   margin: 2px 0 0;
   color: var(--colour-text-primary);
-  font-size: var(--font-size-base);
+  font-size: var(--typography-size-body-default);
+  line-height: var(--typography-line-height-body-default);
 }
 
 .position-evidence__summary {
   margin: 0;
   color: var(--colour-text-secondary);
-  font-size: var(--font-size-xs);
-  line-height: 1.5;
+  font-size: var(--typography-size-caption);
+  line-height: var(--typography-line-height-caption);
 }
 
 .position-evidence__list {
@@ -2144,7 +2610,8 @@ tbody td {
 
 .position-evidence__item dt {
   color: var(--colour-text-secondary);
-  font-size: var(--font-size-xs);
+  font-size: var(--typography-size-caption);
+  line-height: var(--typography-line-height-caption);
   letter-spacing: var(--letter-spacing-wide);
   font-weight: var(--font-weight-bold);
 }
@@ -2152,8 +2619,8 @@ tbody td {
 .position-evidence__item dd {
   margin: 0;
   color: var(--colour-text-secondary);
-  font-size: var(--font-size-xs);
-  line-height: 1.45;
+  font-size: var(--typography-size-caption);
+  line-height: var(--typography-line-height-caption);
 }
 
 .detail-modal__actions {
@@ -2197,7 +2664,8 @@ tbody td {
   background: transparent;
   color: var(--colour-text-secondary);
   text-align: center;
-  font-size: var(--font-size-xs);
+  font-size: var(--typography-size-caption);
+  line-height: var(--typography-line-height-caption);
   cursor: pointer;
   transition: border-color var(--motion-fast) var(--ease-out),
     color var(--motion-fast) var(--ease-out),
@@ -2244,14 +2712,8 @@ tbody td {
   color: var(--colour-icon-muted);
 }
 
-.detail-select-shell__icon svg {
-  width: 14px;
-  height: 14px;
-  fill: none;
-  stroke: currentColor;
-  stroke-width: 1.6;
-  stroke-linecap: round;
-  stroke-linejoin: round;
+.detail-select-shell__icon .icon {
+  --icon-size: 16px;
 }
 
 .detail-form-field--reason {
@@ -2277,7 +2739,8 @@ tbody td {
   align-items: center;
   gap: 6px;
   margin: 0 0 10px;
-  font-size: var(--font-size-xs);
+  font-size: var(--typography-size-caption);
+  line-height: var(--typography-line-height-caption);
   color: var(--colour-text-secondary);
 }
 
@@ -2291,7 +2754,8 @@ tbody td {
   background: var(--colour-background-elevated);
   color: var(--colour-text-secondary);
   font-family: var(--font-family-mono);
-  font-size: var(--font-size-xs);
+  font-size: var(--typography-size-caption);
+  line-height: var(--typography-line-height-caption);
 }
 
 .detail-modal__buttons {
@@ -2346,7 +2810,8 @@ tbody td {
   align-items: center;
   gap: 10px;
   color: var(--colour-text-secondary);
-  font-size: var(--font-size-sm);
+  font-size: var(--typography-size-body-sm);
+  line-height: var(--typography-line-height-body-sm);
   cursor: pointer;
 }
 
@@ -2401,7 +2866,8 @@ tbody td {
   border: 1px solid var(--colour-border-subtle);
   background: var(--colour-background-raised);
   color: var(--colour-text-primary);
-  font-size: var(--font-size-xs);
+  font-size: var(--typography-size-caption);
+  line-height: var(--typography-line-height-caption);
 }
 
 /* An address that will not receive alerts has to look different from one that will. */
@@ -2441,7 +2907,8 @@ tbody td {
   border: 1px solid var(--colour-border-subtle);
   background: var(--colour-background-surface);
   color: var(--colour-text-secondary);
-  font-size: var(--font-size-xs);
+  font-size: var(--typography-size-caption);
+  line-height: var(--typography-line-height-caption);
 }
 
 .status-pill.success {
@@ -2470,6 +2937,12 @@ tbody td {
   display: inline-block;
 }
 
+/* Spinner replaces the icon rather than joining it, so the button keeps
+   one leading mark and its width barely moves. */
+.primary-button.loading .button-icon {
+  display: none;
+}
+
 @keyframes spin {
   to {
     transform: rotate(360deg);
@@ -2488,7 +2961,8 @@ tbody td {
   background: var(--colour-background-elevated);
   box-shadow: var(--shadow-lg);
   color: var(--colour-text-primary);
-  font-size: var(--font-size-sm);
+  font-size: var(--typography-size-body-sm);
+  line-height: var(--typography-line-height-body-sm);
 }
 
 .toast--success {
@@ -2506,64 +2980,23 @@ body.modal-open {
 }
 
 /* ------------------------------------------------------------
-   21. Theme toggle
+   21. Theme control
+   A segmented control, not an icon switch: the design system's icon
+   library publishes no sun or moon, and drawing one would mean a
+   second icon source. Two words are also plainer than two glyphs.
    ------------------------------------------------------------ */
 
-.theme-toggle {
-  position: relative;
-  display: inline-flex;
-  align-items: center;
-  width: 52px;
-  height: 28px;
-  padding: 3px;
-  border-radius: var(--radius-full);
-  border: 1px solid var(--colour-border-subtle);
-  background: var(--colour-background-surface);
-  cursor: pointer;
-  flex-shrink: 0;
-  transition: border-color var(--motion-fast) var(--ease-out);
+.display-group--header .display-toggle {
+  width: auto;
+  padding: 0 10px;
+  font-size: var(--typography-size-caption);
+  line-height: var(--typography-line-height-caption);
+  font-weight: var(--typography-weight-subheading);
+  letter-spacing: var(--typography-letter-spacing-wide);
+  color: var(--colour-text-secondary);
 }
 
-.theme-toggle:hover {
-  border-color: var(--colour-border-default);
-}
-
-.theme-toggle__thumb {
-  position: absolute;
-  top: 3px;
-  left: 3px;
-  width: 20px;
-  height: 20px;
-  border-radius: var(--radius-full);
-  background: var(--colour-background-raised);
-  transition: transform var(--motion-base) var(--ease-out);
-  z-index: 1;
-}
-
-html[data-theme="dark"] .theme-toggle__thumb {
-  transform: translateX(24px);
-}
-
-.theme-toggle__icons {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  width: 100%;
-  padding: 0 4px;
-  pointer-events: none;
-  z-index: 2;
-}
-
-.theme-toggle__icon {
-  width: 12px;
-  height: 12px;
-  fill: currentColor;
-  color: var(--colour-icon-muted);
-  transition: color var(--motion-fast) var(--ease-out);
-}
-
-html[data-theme="light"] .theme-toggle__icon--sun,
-html[data-theme="dark"] .theme-toggle__icon--moon {
+.display-group--header .display-toggle.active {
   color: var(--colour-text-primary);
 }
 
@@ -2594,7 +3027,8 @@ html[data-theme="dark"] .theme-toggle__icon--moon {
   background: transparent;
   color: var(--colour-text-secondary);
   font-family: inherit;
-  font-size: var(--font-size-sm);
+  font-size: var(--typography-size-body-sm);
+  line-height: var(--typography-line-height-body-sm);
   cursor: pointer;
   transition: background var(--motion-fast) var(--ease-out),
     color var(--motion-fast) var(--ease-out);
@@ -2620,11 +3054,83 @@ html[data-theme="dark"] .theme-toggle__icon--moon {
 .insights-status {
   padding: 32px 0;
   color: var(--colour-text-secondary);
-  font-size: var(--font-size-sm);
+  font-size: var(--typography-size-body-sm);
+  line-height: var(--typography-line-height-body-sm);
 }
 
 .insights-status[data-tone="error"] {
   color: var(--colour-text-error);
+}
+
+.reevaluate-status {
+  padding: 10px 0;
+}
+
+.reevaluate-status[data-tone="success"] {
+  color: var(--colour-text-success);
+}
+
+.reevaluate-results__summary {
+  margin: 0 0 10px;
+  color: var(--colour-text-secondary);
+  font-size: var(--typography-size-body-sm);
+}
+
+.reevaluate-results__scroll {
+  max-height: 560px;
+  overflow: auto;
+  border: 1px solid var(--colour-border-subtle);
+  border-radius: var(--radius-md);
+}
+
+.reevaluate-table {
+  width: 100%;
+  min-width: 760px;
+  border-collapse: collapse;
+  font-size: var(--typography-size-body-sm);
+}
+
+.reevaluate-table th,
+.reevaluate-table td {
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--colour-border-subtle);
+  text-align: left;
+  vertical-align: top;
+}
+
+.reevaluate-table th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: var(--colour-background-raised);
+  color: var(--colour-text-secondary);
+  font-weight: var(--font-weight-bold);
+}
+
+.reevaluate-table td:nth-child(4) {
+  min-width: 240px;
+}
+
+.reevaluate-table td:nth-child(4) a {
+  color: inherit;
+  text-decoration: underline;
+  text-decoration-color: var(--colour-border-subtle);
+}
+
+.reevaluate-table td:nth-child(4) small {
+  display: block;
+  margin-top: 4px;
+  color: var(--colour-text-secondary);
+}
+
+.reevaluate-change.is-up {
+  color: var(--colour-text-success);
+  font-weight: var(--font-weight-bold);
+}
+
+.reevaluate-change.is-down {
+  color: var(--colour-text-error);
+  font-weight: var(--font-weight-bold);
 }
 
 .insights-body {
@@ -2643,7 +3149,8 @@ html[data-theme="dark"] .theme-toggle__icon--moon {
 }
 
 .insights-block__head h3 {
-  font-size: var(--font-size-lg);
+  font-size: var(--typography-size-heading-h4);
+  line-height: var(--typography-line-height-heading-h4);
   font-weight: var(--font-weight-bold);
   color: var(--colour-text-primary);
 }
@@ -2652,8 +3159,8 @@ html[data-theme="dark"] .theme-toggle__icon--moon {
   margin-top: 4px;
   max-width: 62ch;
   color: var(--colour-text-secondary);
-  font-size: var(--font-size-sm);
-  line-height: 1.5;
+  font-size: var(--typography-size-body-sm);
+  line-height: var(--typography-line-height-body-sm);
 }
 
 /* The funnel reading is a warning condition, not an action affordance — qualified tenders
@@ -2665,8 +3172,8 @@ html[data-theme="dark"] .theme-toggle__icon--moon {
   background: var(--colour-background-warning);
   /* Primary, not secondary: over the warning tint the secondary token drops to 4.49:1. */
   color: var(--colour-text-primary);
-  font-size: var(--font-size-sm);
-  line-height: 1.6;
+  font-size: var(--typography-size-body-sm);
+  line-height: var(--typography-line-height-body-sm);
 }
 
 .insights-callout:empty {
@@ -2698,7 +3205,8 @@ html[data-theme="dark"] .theme-toggle__icon--moon {
   border: 0;
   background: transparent;
   color: var(--colour-text-secondary);
-  font-size: var(--font-size-xs);
+  font-size: var(--typography-size-caption);
+  line-height: var(--typography-line-height-caption);
   cursor: pointer;
   transition: background var(--motion-fast) var(--ease-out),
     color var(--motion-fast) var(--ease-out);
@@ -2737,13 +3245,15 @@ html[data-theme="dark"] .theme-toggle__icon--moon {
 
 .funnel__label {
   color: var(--colour-text-primary);
-  font-size: var(--font-size-sm);
+  font-size: var(--typography-size-body-sm);
+  line-height: var(--typography-line-height-body-sm);
   font-weight: var(--font-weight-bold);
 }
 
 .funnel__value {
   font-family: var(--font-family-mono);
-  font-size: var(--font-size-lg);
+  font-size: var(--typography-size-heading-h4);
+  line-height: var(--typography-line-height-heading-h4);
   color: var(--colour-text-primary);
 }
 
@@ -2781,7 +3291,8 @@ html[data-theme="dark"] .theme-toggle__icon--moon {
 .funnel__note,
 .funnel__conversion {
   color: var(--colour-text-secondary);
-  font-size: var(--font-size-xs);
+  font-size: var(--typography-size-caption);
+  line-height: var(--typography-line-height-caption);
 }
 
 .funnel__conversion {
@@ -2827,7 +3338,8 @@ html[data-theme="dark"] .theme-toggle__icon--moon {
 
 .market-row__name {
   color: var(--colour-text-primary);
-  font-size: var(--font-size-sm);
+  font-size: var(--typography-size-body-sm);
+  line-height: var(--typography-line-height-body-sm);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -2835,7 +3347,8 @@ html[data-theme="dark"] .theme-toggle__icon--moon {
 }
 
 .market-row__warmth {
-  font-size: var(--font-size-xs);
+  font-size: var(--typography-size-caption);
+  line-height: var(--typography-line-height-caption);
   color: var(--colour-text-secondary);
 }
 
@@ -2899,7 +3412,8 @@ html[data-theme="dark"] .theme-toggle__icon--moon {
 
 .market-row__count {
   font-family: var(--font-family-mono);
-  font-size: var(--font-size-sm);
+  font-size: var(--typography-size-body-sm);
+  line-height: var(--typography-line-height-body-sm);
   color: var(--colour-text-primary);
   text-align: right;
 }
@@ -2907,7 +3421,8 @@ html[data-theme="dark"] .theme-toggle__icon--moon {
 .market-row__meta {
   padding: 0 4px 10px;
   color: var(--colour-text-secondary);
-  font-size: var(--font-size-xs);
+  font-size: var(--typography-size-caption);
+  line-height: var(--typography-line-height-caption);
 }
 
 .market-detail {
@@ -2926,7 +3441,8 @@ html[data-theme="dark"] .theme-toggle__icon--moon {
   grid-template-columns: 54px minmax(0, 1fr) auto;
   align-items: baseline;
   gap: 12px;
-  font-size: var(--font-size-xs);
+  font-size: var(--typography-size-caption);
+  line-height: var(--typography-line-height-caption);
 }
 
 .market-detail__fit {
@@ -3049,7 +3565,8 @@ html[data-theme="dark"] .theme-toggle__icon--moon {
   }
 
   .stat__value {
-    font-size: var(--font-size-xl);
+    font-size: var(--typography-size-heading-h4);
+    line-height: var(--typography-line-height-heading-h4);
   }
 
   .results-card {
@@ -3222,7 +3739,7 @@ html[data-theme="dark"] .theme-toggle__icon--moon {
   gap: 6px;
   margin-left: 12px;
   padding: 4px 8px;
-  border: 1px solid var(--border-subtle, rgba(0, 0, 0, 0.08));
+  border: 1px solid var(--colour-border-subtle);
   border-radius: 999px;
 }
 

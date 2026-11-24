@@ -1,0 +1,341 @@
+diff --git a/api/_lib.py b/api/_lib.py
+index 14eadb4..6e2d09e 100644
+--- a/api/_lib.py
++++ b/api/_lib.py
+@@ -617,6 +617,94 @@ def get_managed_opportunities_from_db(limit: int = 5000) -> list[dict[str, Any]]
+     return [serialize_opportunity_row(row) for row in rows]
+ 
+ 
++def reevaluate_managed_opportunities() -> dict[str, Any]:
++    """Re-score every stored managed opportunity with the current fit rules."""
++    stored_rows: list[dict[str, Any]] = []
++    page_size = 500
++    offset = 0
++    while True:
++        page = supabase_request(
++            "GET",
++            "opportunities",
++            query={
++                "select": (
++                    "id,source,title,organization,countries,deadline,type,link,matched_sources,fit_score,fit_label,"
++                    "fit_reasons,action_status,action_reason,action_notes,action_taken_at,status,first_seen_at,"
++                    "last_synced_at,raw_payload"
++                ),
++                "source": in_filter(MANAGED_SOURCES),
++                "order": "id.asc",
++                "limit": str(page_size),
++                "offset": str(offset),
++            },
++        ) or []
++        stored_rows.extend(page)
++        if len(page) < page_size:
++            break
++        offset += page_size
++
++    updates_by_fit: dict[tuple[int, str, tuple[str, ...]], list[str]] = {}
++    results = []
++    changed_count = 0
++    for row in stored_rows:
++        raw = row.get("raw_payload") if isinstance(row.get("raw_payload"), dict) else {}
++        fit_input = {
++            **raw,
++            "title": row.get("title") or raw.get("title"),
++            "organization": row.get("organization") or raw.get("organization"),
++            "type": row.get("type") or raw.get("type"),
++            "countryList": raw.get("countryList") or row.get("countries") or [],
++            "scope": raw.get("scope") or "",
++        }
++        fit = get_fit_analysis(fit_input)
++        old_score = int(row.get("fit_score") or 0)
++        old_label = row.get("fit_label") or "Low fit"
++        old_reasons = row.get("fit_reasons") or []
++        reasons = tuple(fit["reasons"])
++        key = (fit["score"], fit["label"], reasons)
++        updates_by_fit.setdefault(key, []).append(row["id"])
++        is_changed = (
++            old_score != fit["score"]
++            or old_label != fit["label"]
++            or list(old_reasons) != list(reasons)
++        )
++        changed_count += int(is_changed)
++        serialized_row = {
++            **row,
++            "fit_score": fit["score"],
++            "fit_label": fit["label"],
++            "fit_reasons": list(reasons),
++        }
++        item = serialize_opportunity_row(serialized_row)
++        item["previousFitScore"] = old_score
++        item["previousFitLabel"] = old_label
++        item["fitScoreChange"] = fit["score"] - old_score
++        item["fitChanged"] = is_changed
++        results.append(item)
++
++    for (score, label, reasons), opportunity_ids in updates_by_fit.items():
++        for start in range(0, len(opportunity_ids), 100):
++            supabase_request(
++                "PATCH",
++                "opportunities",
++                query={"id": in_filter(opportunity_ids[start : start + 100], quote=False)},
++                payload={
++                    "fit_score": score,
++                    "fit_label": label,
++                    "fit_reasons": list(reasons),
++                },
++                prefer="return=minimal",
++            )
++
++    results.sort(key=lambda item: (-item["fitScore"], item["title"].lower()))
++    return {
++        "count": len(results),
++        "changedCount": changed_count,
++        "unchangedCount": len(results) - changed_count,
++        "items": results,
++    }
++
++
+ def get_latest_sync_run() -> dict[str, Any] | None:
+     rows = supabase_request(
+         "GET",
+diff --git a/app.js b/app.js
+index 6506b95..b880252 100644
+--- a/app.js
++++ b/app.js
+@@ -62,6 +62,9 @@ const insightsViewButton = document.querySelector("#view-insights");
+ const deskView = document.querySelector("#desk-view");
+ const insightsPanel = document.querySelector("#panel-insights");
+ const insightsStatus = document.querySelector("#insights-status");
++const reevaluateButton = document.querySelector("#reevaluate-button");
++const reevaluateStatus = document.querySelector("#reevaluate-status");
++const reevaluateResults = document.querySelector("#reevaluate-results");
+ const insightsBody = document.querySelector("#insights-body");
+ const insightsFunnel = document.querySelector("#insights-funnel");
+ const insightsFunnelLeak = document.querySelector("#insights-funnel-leak");
+@@ -209,6 +212,7 @@ pendingTab.addEventListener("click", () => setActiveTab("pending"));
+ appliedTab.addEventListener("click", () => setActiveTab("applied"));
+ missedTab.addEventListener("click", () => setActiveTab("missed"));
+ deskViewButton.addEventListener("click", () => setActiveTab(lastDeskTab));
++reevaluateButton.addEventListener("click", handleReevaluateHistory);
+ insightsViewButton.addEventListener("click", () => setActiveTab("insights"));
+ insightsMarketToggles.forEach((button) => {
+   button.addEventListener("click", () => {
+@@ -3007,6 +3011,68 @@ async function loadInsights() {
+   }
+ }
+ 
++async function handleReevaluateHistory() {
++  reevaluateButton.disabled = true;
++  reevaluateButton.textContent = "Re-scoring…";
++  reevaluateStatus.hidden = false;
++  reevaluateStatus.dataset.tone = "loading";
++  reevaluateStatus.textContent = "Applying the current fit rules to every stored opportunity.";
++  reevaluateResults.hidden = true;
++
++  try {
++    const response = await fetchWithAuth("/api/re-evaluate", { method: "POST" });
++    const data = await response.json().catch(() => null);
++    if (!response.ok) {
++      throw new Error(data?.error || "Could not re-evaluate stored opportunities.");
++    }
++
++    const items = Array.isArray(data?.items) ? data.items : [];
++    reevaluateStatus.dataset.tone = "success";
++    reevaluateStatus.textContent = `Re-evaluated ${data.count} opportunities. ${data.changedCount} changed and ${data.unchangedCount} stayed the same.`;
++    reevaluateResults.innerHTML = renderReevaluationResults(items);
++    reevaluateResults.hidden = items.length === 0;
++    insightsDataset = null;
++  } catch (error) {
++    reevaluateStatus.dataset.tone = "error";
++    reevaluateStatus.textContent = error.message || "Could not re-evaluate stored opportunities.";
++  } finally {
++    reevaluateButton.disabled = false;
++    reevaluateButton.textContent = "Re-score all opportunities";
++  }
++}
++
++function renderReevaluationResults(items) {
++  if (!items.length) {
++    return "";
++  }
++  const rows = items.map((item) => {
++    const change = Number(item.fitScoreChange) || 0;
++    const changeLabel = change > 0 ? `+${change}` : String(change);
++    const reasons = (Array.isArray(item.fitReasons) ? item.fitReasons : [])
++      .map((reason) => escapeHtml(reason))
++      .join(" · ");
++    const title = escapeHtml(getOpportunityDisplayTitle(item));
++    const organization = escapeHtml(item.organization || "N/A");
++    const oldFit = `${Number(item.previousFitScore) || 0}%`;
++    const newFit = `${Number(item.fitScore) || 0}%`;
++    const titleContent = item.link
++      ? `<a href="${escapeAttribute(item.link)}" target="_blank" rel="noreferrer">${title}</a>`
++      : title;
++    return `<tr>
++      <td><span class="fit-badge fit-badge--${getFitTone(Number(item.fitScore) || 0)}">${newFit}</span></td>
++      <td>${oldFit}</td>
++      <td class="reevaluate-change${change > 0 ? " is-up" : change < 0 ? " is-down" : ""}">${changeLabel}</td>
++      <td><strong>${titleContent}</strong><small>${organization}</small></td>
++      <td>${reasons}</td>
++    </tr>`;
++  }).join("");
++  return `<div class="reevaluate-results__summary">Sorted by the new fit score. Scores are saved to the opportunity records.</div>
++    <div class="reevaluate-results__scroll"><table class="reevaluate-table">
++      <thead><tr><th>New fit</th><th>Old fit</th><th>Change</th><th>Opportunity</th><th>Why it scored this way</th></tr></thead>
++      <tbody>${rows}</tbody>
++    </table></div>`;
++}
++
+ function renderInsights() {
+   const items = Array.isArray(insightsDataset) ? insightsDataset : [];
+ 
+diff --git a/index.html b/index.html
+index 9403ff6..686ded3 100644
+--- a/index.html
++++ b/index.html
+@@ -475,6 +475,20 @@
+             <p id="insights-status" class="insights-status">Loading insights.</p>
+ 
+             <div id="insights-body" class="insights-body" hidden>
++              <section class="insights-block" aria-labelledby="reevaluate-title">
++                <div class="insights-block__head reevaluate-head">
++                  <div>
++                    <h3 id="reevaluate-title">Re-evaluate stored opportunities</h3>
++                    <p class="insights-block__note">
++                      Apply the current fit rules to every opportunity on record, then compare its old and new score.
++                    </p>
++                  </div>
++                  <button id="reevaluate-button" class="primary-button primary-button--small" type="button">Re-score all opportunities</button>
++                </div>
++                <p id="reevaluate-status" class="insights-status reevaluate-status" hidden aria-live="polite"></p>
++                <div id="reevaluate-results" class="reevaluate-results" hidden></div>
++              </section>
++
+               <section class="insights-block" aria-labelledby="insights-funnel-title">
+                 <div class="insights-block__head">
+                   <h3 id="insights-funnel-title">Our funnel</h3>
+diff --git a/styles.css b/styles.css
+index fdb3aef..c42e03e 100644
+--- a/styles.css
++++ b/styles.css
+@@ -3248,3 +3248,75 @@ html[data-theme="dark"] .theme-toggle__icon--moon {
+   border: 1px solid #c0462f;
+   opacity: 0.45;
+ }
++
++.reevaluate-status {
++  padding: 10px 0;
++}
++
++.reevaluate-status[data-tone="success"] {
++  color: var(--colour-text-success);
++}
++
++.reevaluate-results__summary {
++  margin: 0 0 10px;
++  color: var(--colour-text-secondary);
++  font-size: var(--typography-size-body-sm);
++}
++
++.reevaluate-results__scroll {
++  max-height: 560px;
++  overflow: auto;
++  border: 1px solid var(--colour-border-subtle);
++  border-radius: var(--radius-md);
++}
++
++.reevaluate-table {
++  width: 100%;
++  min-width: 760px;
++  border-collapse: collapse;
++  font-size: var(--typography-size-body-sm);
++}
++
++.reevaluate-table th,
++.reevaluate-table td {
++  padding: 10px 12px;
++  border-bottom: 1px solid var(--colour-border-subtle);
++  text-align: left;
++  vertical-align: top;
++}
++
++.reevaluate-table th {
++  position: sticky;
++  top: 0;
++  z-index: 1;
++  background: var(--colour-background-raised);
++  color: var(--colour-text-secondary);
++  font-weight: var(--font-weight-bold);
++}
++
++.reevaluate-table td:nth-child(4) {
++  min-width: 240px;
++}
++
++.reevaluate-table td:nth-child(4) a {
++  color: inherit;
++  text-decoration: underline;
++  text-decoration-color: var(--colour-border-subtle);
++}
++
++.reevaluate-table td:nth-child(4) small {
++  display: block;
++  margin-top: 4px;
++  color: var(--colour-text-secondary);
++}
++
++.reevaluate-change.is-up {
++  color: var(--colour-text-success);
++  font-weight: var(--font-weight-bold);
++}
++
++.reevaluate-change.is-down {
++  color: var(--colour-text-error);
++  font-weight: var(--font-weight-bold);
++}
++
+diff --git a/vercel.json b/vercel.json
+index b9bbbd2..2b79fcb 100644
+--- a/vercel.json
++++ b/vercel.json
+@@ -5,6 +5,9 @@
+     },
+     "api/refresh.py": {
+       "maxDuration": 300
++    },
++    "api/re-evaluate.py": {
++      "maxDuration": 300
+     }
+   },
+   "crons": [
+diff --git a/api/re-evaluate.py b/api/re-evaluate.py
+new file mode 100644
+index 0000000..7de9ff5
+--- /dev/null
++++ b/api/re-evaluate.py
+@@ -0,0 +1,26 @@
++from __future__ import annotations
++
++import json
++from http.server import BaseHTTPRequestHandler
++
++from api._lib import AuthError, get_authenticated_user, reevaluate_managed_opportunities
++
++
++class handler(BaseHTTPRequestHandler):
++    def do_POST(self):
++        try:
++            get_authenticated_user(self.headers)
++            self.write_json(reevaluate_managed_opportunities())
++        except AuthError as exc:
++            self.write_json({"error": str(exc)}, status=401)
++        except Exception as exc:  # pragma: no cover
++            self.write_json({"error": str(exc)}, status=502)
++
++    def write_json(self, payload: dict, status: int = 200):
++        body = json.dumps(payload).encode("utf-8")
++        self.send_response(status)
++        self.send_header("Content-Type", "application/json; charset=utf-8")
++        self.send_header("Content-Length", str(len(body)))
++        self.send_header("Cache-Control", "private, no-store")
++        self.end_headers()
++        self.wfile.write(body)

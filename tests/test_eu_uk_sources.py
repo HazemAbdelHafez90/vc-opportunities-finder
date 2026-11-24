@@ -14,7 +14,7 @@ if "bs4" not in sys.modules:
         sys.modules["bs4"] = bs4_stub
 
 from api import _lib
-from api import source_health as health
+from lib import source_health as health
 
 
 # One real notice from the live search, with the 24-language title and link maps cut
@@ -507,6 +507,9 @@ class EuUkSourceWiringTests(unittest.TestCase):
             "fetch_caf_tenders": "CAF",
             "fetch_ted_notices": "TED",
             "fetch_find_a_tender_notices": "Find a Tender",
+            "fetch_eeas_tenders": "EEAS",
+            "fetch_fairtrade_opportunities": "Fairtrade International",
+            "fetch_simap_tenders": "SIMAP",
         }
         original = {attr: getattr(_lib, attr) for attr in attrs}
         for attr, label in attrs.items():

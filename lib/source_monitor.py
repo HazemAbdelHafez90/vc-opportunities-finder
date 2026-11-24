@@ -14,7 +14,7 @@ from datetime import datetime, timezone
 from typing import Any
 from urllib import error, request
 
-from api import source_health as health
+from lib import source_health as health
 from api._lib import (
     SSL_CONTEXT,
     ACTIVE_SOURCES,

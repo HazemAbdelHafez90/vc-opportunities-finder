@@ -5,8 +5,19 @@
     },
     "api/refresh.py": {
       "maxDuration": 300
+    },
+    "api/re-evaluate.py": {
+      "maxDuration": 300
     }
   },
+  "rewrites": [
+    { "source": "/api/admin-bootstrap", "destination": "/api/control?route=admin-bootstrap" },
+    { "source": "/api/admin-login", "destination": "/api/control?route=admin-login" },
+    { "source": "/api/auth-config", "destination": "/api/control?route=auth-config" },
+    { "source": "/api/notification-settings", "destination": "/api/control?route=notification-settings" },
+    { "source": "/api/reset-actions", "destination": "/api/control?route=reset-actions" },
+    { "source": "/api/test-notification", "destination": "/api/control?route=test-notification" }
+  ],
   "crons": [
     {
       "path": "/api/cron-refresh",

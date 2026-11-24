@@ -11,6 +11,9 @@ Internal Fairpicture tool for discovering media-related opportunities from:
 - CAF (Confédération Africaine de Football)
 - TED (Tenders Electronic Daily, the EU procurement gazette)
 - Find a Tender (UK public contracts)
+- EEAS (European External Action Service tenders)
+- SIMAP (Swiss public procurement)
+- Fairtrade International tenders and RFPs
 
 The app now uses Supabase as its cache and read layer:
 
@@ -35,17 +38,15 @@ API routes:
   returns the latest sync metadata
 - `api/refresh.py`
   fetches live data from all sources and updates Supabase
-- `api/notification-settings.py`
-  reads and saves email notification settings for the sync job
-- `api/test-notification.py`
-  sends a manual Postmark test email using the current notification settings
-- `api/auth-config.py`
-  returns the public Supabase auth config needed by the browser sign-in flow
+- `api/re-evaluate.py`
+  reapplies the current fit rules to every stored managed opportunity and returns an old/new score comparison
+- `api/control.py`
+  serves settings, email-test, bootstrap, and authentication endpoints while preserving their `/api/...` URLs
 - `api/_lib.py`
   shared source fetchers, fit scoring, normalization, and Supabase REST helpers
-- `api/fairpicture_position.py`
+- `lib/fairpicture_position.py`
   scores country experience ("can we deliver there")
-- `api/client_warmth.py`
+- `lib/client_warmth.py`
   scores the issuing organisation ("do they already know us")
 
 Database:
@@ -224,11 +225,11 @@ The floor (`source_quiet_floor_days`, default 2) and per-source overrides
 
 Some sources match nothing in a normal month by design — they publish a handful of
 tenders at a time and only occasionally a media one. Those carry a committed
-default in `SPARSE_SOURCE_QUIET_BUSINESS_DAYS` (Welthungerhilfe, Plan International
-and CAF, at 90 business days) so they do not open an incident within days of being
+default in `SPARSE_SOURCE_QUIET_BUSINESS_DAYS` (Welthungerhilfe, Plan International,
+CAF, EEAS, SIMAP, and Fairtrade International, at 90 business days) so they do not open an incident within days of being
 switched on. A value in `source_quiet_overrides` still wins over it. For these the
-`hard_fail` rule does the real watching, which is why Plan International and CAF
-both carry a probe: without one a run row reports `rowsParsed` as the matched
+`hard_fail` rule does the real watching, which is why these sources carry a probe:
+without one a run row reports `rowsParsed` as the matched
 count, and a page that silently stopped yielding tenders would look the same as a
 quiet week.
 
@@ -238,6 +239,10 @@ EU and UK public contract, and they match most days — so a quiet week is a bro
 fetcher, and the normal floor is the right thing to judge them on.
 
 ### Retiring a source
+
+SIMAP's public notice data are accompanied by the publication disclaimer shown in
+the source drawer: “This is not an official publication. The data published on the
+www.simap.ch platform are authoritative.”
 
 `MANAGED_SOURCES` is the read filter on the opportunities table, so a source
 removed from it loses every tender it ever contributed from the desk, the emails
