@@ -66,6 +66,12 @@ DEFAULT_KEYWORDS = [
     "video production",
     "content production",
     "visual storytelling",
+    "visual consent",
+    "photo consent",
+    "model release",
+    "image rights",
+    "consent management",
+    "consent platform",
 ]
 RELIEFWEB_OPPORTUNITY_TYPES = ["Tender/RFPs/EOIs", "Consultancy"]
 RELIEFWEB_RESULT_LIMIT = 50
@@ -1016,6 +1022,27 @@ def run_refresh_sync(*, triggered_by: str = "manual") -> dict[str, Any]:
         live_items, source_results = fetch_live_items(DEFAULT_APPNAME, DEFAULT_KEYWORDS)
         now_iso = datetime.now(timezone.utc).isoformat()
         existing_rows = get_existing_rows()
+        from lib.tender_documents import EXTRACTION_VERSION, apply_document_deadline, enrich_documents
+
+        cached_documents = {
+            row.get("link"): row.get("raw_payload") or {}
+            for row in existing_rows if row.get("link")
+        }
+        for item in live_items:
+            cached = cached_documents.get(item.get("link"), {})
+            checked_at = parse_date(cached.get("documentsCheckedAt"))
+            if cached.get("documentStatus"):
+                item["documents"] = cached.get("documents") or []
+                item["documentsCheckedAt"] = cached.get("documentsCheckedAt")
+                item["documentExtractionVersion"] = cached.get("documentExtractionVersion")
+                item["documentStatus"] = (
+                    "checked" if cached.get("documentStatus") == "checked" and checked_at
+                    and cached.get("documentExtractionVersion") == EXTRACTION_VERSION
+                    and datetime.now(timezone.utc) - checked_at < timedelta(days=1) else "pending"
+                )
+        enrich_documents(live_items, headers=DEFAULT_HEADERS, ssl_context=SSL_CONTEXT)
+        for item in live_items:
+            apply_document_deadline(item)
         existing_rows, collapsed_duplicate_count = collapse_existing_duplicates(existing_rows)
         open_rows = [to_db_row(item, now_iso) for item in live_items]
         existing_by_key = {
@@ -1163,7 +1190,7 @@ def get_existing_rows() -> list[dict[str, Any]]:
                 "id,source,source_item_id,canonical_key,matched_sources,status,deadline,first_seen_at,new_notification_sent_at,"
                 "expiry_notification_sent_at,expiry_notification_sent_days,title,organization,countries,"
                 "type,link,fit_score,fit_label,fit_reasons,action_status,action_reason,action_notes,action_taken_at,"
-                "last_seen_at,last_synced_at,expired_notification_sent_at"
+                "last_seen_at,last_synced_at,expired_notification_sent_at,raw_payload"
             ),
             "source": in_filter(MANAGED_SOURCES),
         },
@@ -1681,6 +1708,8 @@ def serialize_opportunity_row(row: dict[str, Any]) -> dict[str, Any]:
     matched_sources = normalize_sources(row.get("matched_sources"))
     action_status = normalize_action_status(row.get("action_status"))
     missed_reason = normalize_action_reason(row.get("action_reason"), row.get("action_status"), row.get("status"))
+    raw = row.get("raw_payload") if isinstance(row.get("raw_payload"), dict) else {}
+    fit_input = {**raw, "title": row.get("title") or raw.get("title"), "organization": row.get("organization") or raw.get("organization"), "type": row.get("type") or raw.get("type")}
     return {
         "id": row.get("id"),
         "title": row.get("title") or "Untitled opportunity",
@@ -1696,6 +1725,11 @@ def serialize_opportunity_row(row: dict[str, Any]) -> dict[str, Any]:
         "fitLabel": row.get("fit_label") or "Low fit",
         "fitReasons": row.get("fit_reasons") or [],
         "scopeVisible": bool((row.get("raw_payload") or {}).get("scopeVisible")),
+        "documents": (row.get("raw_payload") or {}).get("documents") or [],
+        "documentStatus": (row.get("raw_payload") or {}).get("documentStatus"),
+        "deadlineFromDocument": bool((row.get("raw_payload") or {}).get("deadlineFromDocument")),
+        "documentFitEvidence": document_fit_evidence(fit_input)[:8],
+        "fairconsentFit": get_fairconsent_fit(fit_input),
         "fairpicturePosition": get_fairpicture_position(row.get("countries") or []),
         "clientWarmth": get_client_warmth(row.get("organization"), row.get("link")),
         "actionStatus": action_status,
@@ -2499,7 +2533,8 @@ def extract_ungm_reported_total(html: str) -> int | None:
 
 
 def fetch_ungm_notices(keywords: list[str], probe: SourceProbe | None = None) -> list[dict]:
-    search_terms = list(dict.fromkeys(keywords[:5] or ["video"]))
+    extra_consent_terms = [term for term in ("visual consent", "model release", "consent management") if term in keywords]
+    search_terms = list(dict.fromkeys((keywords[:5] or ["video"]) + extra_consent_terms))
     verification_headers = fetch_ungm_verification_headers()
     deduped = {}
 
@@ -3819,6 +3854,10 @@ def parse_find_a_tender_release(release: dict[str, Any]) -> dict[str, Any] | Non
         "link": find_a_tender_link(documents, notice_id),
         "source": "Find a Tender",
         "scope": compact_space(String(tender.get("description"))),
+        "documentLinks": [
+            {"name": compact_space(String(doc.get("title") or doc.get("description"))), "url": compact_space(String(doc.get("url")))}
+            for doc in documents if isinstance(doc, dict) and doc.get("url")
+        ],
     }
 
 
@@ -4071,9 +4110,42 @@ def build_fit_haystack(opportunity: dict[str, Any]) -> str:
                 String(opportunity.get("type")),
                 " ".join(opportunity.get("countryList") or []),
                 String(opportunity.get("scope")),
+                " ".join(entry["text"] for entry in document_fit_evidence(opportunity)),
             ]
         )
     )
+
+
+def document_fit_evidence(opportunity: dict[str, Any]) -> list[dict[str, Any]]:
+    evidence = []
+    for document in opportunity.get("documents") or []:
+        if not isinstance(document, dict) or document.get("status") != "read":
+            continue
+        for excerpt in document.get("fitExcerpts") or []:
+            if isinstance(excerpt, dict) and excerpt.get("text"):
+                evidence.append({"document": document.get("name") or "Document", "page": excerpt.get("page"), "text": str(excerpt["text"])[:500]})
+    return evidence[:30]
+
+
+def get_fairconsent_fit(opportunity: dict[str, Any]) -> dict[str, Any]:
+    """Identify image-subject consent, not unrelated cookie or medical consent."""
+    text = build_fit_haystack(opportunity)
+    direct_terms = ["visual consent", "photo consent", "photographic consent", "image consent",
+                    "model release", "image release", "consent to be photographed", "consent to be filmed",
+                    "consent to film", "image rights", "image consent management"]
+    direct = matches_any_fit_term(text, direct_terms)
+    consent = matches_any_fit_term(text, ["consent", "consent management", "informed consent", "release form"])
+    visual = matches_any_fit_term(text, ["photo", "photography", "image", "video", "filming", "visual", "media", "subject", "portrait"])
+    unrelated = matches_any_fit_term(text, ["cookie consent", "cookies", "clinical trial", "patient consent", "medical consent"])
+    product = matches_any_fit_term(text, ["consent management", "consent platform", "consent system", "consent software", "digital consent", "consent records", "consent tracking"])
+    if (direct or (consent and visual)) and not (unrelated and not direct):
+        level = "direct" if product else "potential"
+        label = "Direct opportunity" if product else "Potential add-on"
+        reason = ("Visual consent and a consent-management system are requested." if product
+                  else "Visual work or image rights mentions consent; check whether a consent tool is needed.")
+    else:
+        level, label, reason = "none", "No clear signal", "No clear visual-consent opportunity found in the available text."
+    return {"level": level, "label": label, "reason": reason}
 
 
 def matches_fit_term(haystack: str, term: str) -> bool:
@@ -4086,6 +4158,8 @@ def matches_any_fit_term(haystack: str, terms: list[str]) -> bool:
 
 def is_scope_visible(opportunity: dict[str, Any]) -> bool:
     scope = normalize_lookup_key(String(opportunity.get("scope")))
+    if document_fit_evidence(opportunity):
+        return True
     if not scope:
         return False
 
@@ -4109,6 +4183,10 @@ def get_fit_analysis(opportunity: dict[str, Any]) -> dict[str, Any]:
 
     score = FIT_BASE_SCORE
     reasons = ["Base Fairpicture fit score"]
+    evidence = document_fit_evidence(opportunity)
+    if evidence:
+        names = list(dict.fromkeys(entry["document"] for entry in evidence))
+        reasons.append("Includes matching passages from: " + ", ".join(names[:3]))
 
     if matches_any_fit_term(haystack, FIT_VISUAL_TERMS):
         score += FIT_VISUAL_WEIGHT

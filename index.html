@@ -379,6 +379,8 @@
                     <option value="high">High fit</option>
                     <option value="medium">Medium fit</option>
                     <option value="low">Low fit</option>
+                    <option value="fairconsent">FairConsent signals</option>
+                    <option value="fairconsent-direct">FairConsent direct opportunities</option>
                   </select>
                 </div>
               </details>
@@ -779,6 +781,22 @@
               <dd id="detail-source-meta">—</dd>
             </div>
           </dl>
+
+          <section id="detail-documents-panel" class="position-evidence" hidden>
+            <h3>Tender documents</h3>
+            <div id="detail-documents"></div>
+          </section>
+
+          <section class="position-evidence" aria-labelledby="detail-consent-title">
+            <h3 id="detail-consent-title">FairConsent opportunity</h3>
+            <p id="detail-consent-summary"></p>
+            <p class="cell-subtext">A signal to review, not confirmation that the buyer is procuring FairConsent.</p>
+          </section>
+
+          <section id="detail-document-fit-panel" class="position-evidence" hidden>
+            <h3>Document evidence for fit</h3>
+            <ul id="detail-document-fit"></ul>
+          </section>
 
           <section id="detail-warmth-panel" class="position-evidence" aria-labelledby="detail-warmth-title">
             <div class="position-evidence__header">

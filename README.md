@@ -1,5 +1,25 @@
 # Fairpicture Opportunity Finder
 
+During refresh the app checks public notice attachments across its supported
+sources, using source-specific allowed hosts and a server-side cookie session.
+Accessible PDFs and DOCX files are searched for possible submission deadlines and
+requirements, with attributed excerpts in the opportunity detail panel. A single
+unambiguous document deadline fills a missing notice deadline; conflicting dates
+are shown for review. Document findings are heuristic and require verification.
+Each refresh schedules at most 20 notices and three documents per notice, with a
+35-second scheduling budget; successful checks are cached for one day. Files are
+limited to 8 MB, PDFs to 30 pages, and stored excerpts to 12,000 characters.
+Scanned PDFs, other file formats, files on unapproved external hosts, and documents
+behind supplier logins cannot be read automatically.
+
+Visual-production fit uses relevant excerpts from readable tender documents as
+well as the notice, with document and page references shown in the detail panel.
+The separate FairConsent signal distinguishes potential visual-consent add-ons
+from tenders explicitly seeking a visual-consent management tool. Use the Fit
+filter to find either signal; these are keyword-based leads, not verified product
+requirements. Refresh searches also include visual-consent and model-release
+terms, though each source's own search and classification limits still apply.
+
 Internal Fairpicture tool for discovering media-related opportunities from:
 
 - ReliefWeb

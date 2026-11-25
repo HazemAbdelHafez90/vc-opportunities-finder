@@ -1609,7 +1609,12 @@ function filterOpportunities(opportunities, filters) {
       return false;
     }
 
-    if (filters.fit !== "all" && getFitFilterValue(opportunity) !== filters.fit) {
+    const consentLevel = opportunity.fairconsentFit?.level || "none";
+    const matchesFit = filters.fit === "all"
+      || (filters.fit === "fairconsent" && consentLevel !== "none")
+      || (filters.fit === "fairconsent-direct" && consentLevel === "direct")
+      || getFitFilterValue(opportunity) === filters.fit;
+    if (!matchesFit) {
       return false;
     }
 
@@ -1821,6 +1826,8 @@ function renderTable(opportunities) {
       const scopeBadge = opportunity.scopeVisible
         ? ""
         : '<span class="status-badge status-badge--reviewed">Scope not visible</span>';
+      const consentBadge = opportunity.fairconsentFit?.level !== "none" && opportunity.fairconsentFit?.level
+        ? `<span class="status-badge status-badge--reviewed">FairConsent: ${escapeHtml(opportunity.fairconsentFit.label)}</span>` : "";
 
       return `
         <tr class="clickable-row" data-opportunity-id="${safeId}">
@@ -1837,6 +1844,7 @@ function renderTable(opportunities) {
             <p class="opportunity-title" title="${safeTitleAttr}">${safeTitle}</p>
             <small class="opportunity-subline">${safeSecondary}</small>
             ${scopeBadge}
+            ${consentBadge}
           </td>
           <td data-label="Source">
             <span class="source-tag">${safeSource}</span>
@@ -1888,6 +1896,8 @@ function renderCards(opportunities) {
       const scopeBadge = opportunity.scopeVisible
         ? ""
         : '<span class="status-badge status-badge--reviewed">Scope not visible</span>';
+      const consentBadge = opportunity.fairconsentFit?.level !== "none" && opportunity.fairconsentFit?.level
+        ? `<span class="status-badge status-badge--reviewed">FairConsent: ${escapeHtml(opportunity.fairconsentFit.label)}</span>` : "";
 
       return `
         <article class="opportunity-card opportunity-card--${fitTone}${expiringSoon ? " opportunity-card--expiring" : ""}" data-opportunity-id="${safeId}">
@@ -1898,6 +1908,7 @@ function renderCards(opportunities) {
             <div class="opportunity-card__badges">
               <span class="fit-badge fit-badge--${fitTone}">${escapeHtml(getFitBadgeLabel(opportunity))}</span>
               ${scopeBadge}
+              ${consentBadge}
               ${warmthDescriptor.tone === "new" ? "" : renderWarmthBadge(warmthDescriptor)}
               ${renderPositionBadge(positionDescriptor)}
             </div>
@@ -3558,9 +3569,73 @@ function openDetailModal(opportunityId) {
   detailCountries.textContent = countryLabel;
   detailDeadline.className = `detail-meta-value detail-meta-value--${deadlineMeta.tone}`;
   detailDeadline.innerHTML = `${escapeHtml(deadlineMeta.label)}${deadlineMeta.suffix ? ` <small>${escapeHtml(deadlineMeta.suffix)}</small>` : ""}`;
+  if (opportunity.deadlineFromDocument) {
+    detailDeadline.innerHTML += " <small>Found in a document; verify with the issuer</small>";
+  }
   detailType.textContent = getDetailTypeLabel(opportunity);
   detailAdded.textContent = formatDate(opportunity.addedAt);
   detailSourceMeta.textContent = getOpportunitySourceDetail(opportunity);
+  const consent = opportunity.fairconsentFit || { label: "Not assessed", reason: "No assessment available yet." };
+  document.querySelector("#detail-consent-summary").textContent = `${consent.label} — ${consent.reason}`;
+  const fitEvidence = Array.isArray(opportunity.documentFitEvidence) ? opportunity.documentFitEvidence : [];
+  document.querySelector("#detail-document-fit-panel").hidden = fitEvidence.length === 0;
+  const evidenceList = document.querySelector("#detail-document-fit");
+  evidenceList.replaceChildren();
+  for (const evidence of fitEvidence) {
+    const li = document.createElement("li");
+    li.textContent = `${evidence.text} (${evidence.document}${evidence.page ? `, page ${evidence.page}` : ""})`;
+    evidenceList.append(li);
+  }
+  const documentsPanel = document.querySelector("#detail-documents-panel");
+  const documentsContainer = document.querySelector("#detail-documents");
+  const documents = Array.isArray(opportunity.documents) ? opportunity.documents : [];
+  documentsPanel.hidden = !opportunity.documentStatus;
+  documentsContainer.replaceChildren();
+  if (opportunity.documentStatus === "unavailable" && !documents.length) {
+    documentsContainer.textContent = "Documents could not be checked during the last refresh.";
+  } else if (opportunity.documentStatus === "pending" && !documents.length) {
+    documentsContainer.textContent = "Documents are waiting to be checked in a future refresh.";
+  } else if (!documents.length) {
+    documentsContainer.textContent = "No public documents found on the notice.";
+  } else {
+    const findings = documents.flatMap((doc) => [
+      ...(doc.deadlines || []).map((finding) => ({ ...finding, kind: "Possible submission deadline" })),
+      ...(doc.requirements || []).map((finding) => ({ ...finding, kind: "Possible requirement" })),
+    ]);
+    if (findings.length) {
+      const intro = document.createElement("p");
+      intro.textContent = "Possible deadlines and requirements found in documents. Verify the original text before acting.";
+      documentsContainer.append(intro);
+      const list = document.createElement("ul");
+      for (const finding of findings) {
+        const li = document.createElement("li");
+        li.textContent = `${finding.kind}${finding.date ? `: ${finding.date}` : ""} — ${finding.excerpt} (${finding.document}${finding.page ? `, page ${finding.page}` : ""})`;
+        list.append(li);
+      }
+      documentsContainer.append(list);
+    }
+    for (const doc of documents) {
+      const block = document.createElement("details");
+      const summary = document.createElement("summary");
+      summary.textContent = `${doc.name || "Document"} — ${doc.status === "read" ? "text extracted" : "not readable automatically"}`;
+      block.append(summary);
+      const content = document.createElement("p");
+      content.textContent = doc.text || "Open the original notice to access this document.";
+      content.style.whiteSpace = "pre-wrap";
+      block.append(content);
+      if (doc.truncated) {
+        const notice = document.createElement("small");
+        notice.textContent = "Text is limited to the first 12,000 characters. Open the original notice for the complete document.";
+        block.append(notice);
+      }
+      if (doc.analysisTruncated) {
+        const notice = document.createElement("small");
+        notice.textContent = "The complete file was not checked. Review the original document for more details.";
+        block.append(notice);
+      }
+      documentsContainer.append(block);
+    }
+  }
   detailNotes.value = opportunity.actionNotes || "";
   detailTargetState.value = getDetailTargetState(opportunity);
   detailMissedReason.value = opportunity.missedReason || "";
