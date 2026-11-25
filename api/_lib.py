@@ -92,6 +92,7 @@ MANAGED_SOURCES = [
     "EEAS",
     "Fairtrade International",
     "SIMAP",
+    "UNICEF U-Report",
 ]
 
 # Retired: still shown, no longer fetched. ICIMOD contributed one tender in eight
@@ -2220,6 +2221,7 @@ def fetch_live_items(appname: str, keywords: list[str]) -> tuple[list[dict[str, 
         ("EEAS", fetch_eeas_tenders, (keywords,), {}),
         ("Fairtrade International", fetch_fairtrade_opportunities, (keywords,), {}),
         ("SIMAP", fetch_simap_tenders, (keywords,), {}),
+        ("UNICEF U-Report", fetch_unicef_ureport, (keywords,), {}),
     ]
 
     if appname:
@@ -2866,6 +2868,37 @@ def fetch_eeas_tenders(keywords: list[str], probe: SourceProbe | None = None) ->
             items.append(record)
     if probe is not None:
         probe.record(fetched=fetched, parsed=parsed)
+    return items
+
+
+def fetch_unicef_ureport(keywords: list[str], probe: SourceProbe | None = None) -> list[dict]:
+    url = "https://ethiopia.ureport.in/jobs/"
+    soup = BeautifulSoup(request_text(url, probe=probe), "html.parser")
+    headings = soup.select("div.text-2xl")
+    items = []
+    parsed = 0
+    for heading in headings:
+        title = compact_space(heading.get_text(" ", strip=True))
+        description = heading.find_next_sibling("div", class_="text")
+        link_box = description.find_next_sibling("div") if description else None
+        anchor = link_box.find("a", href=True) if link_box else None
+        if not title or not anchor:
+            continue
+        link = anchor["href"]
+        if not re.fullmatch(r"https?://careers\.pageuppeople\.com/671/cw/en-us/job/\d+/?", link):
+            continue
+        parsed += 1
+        scope = compact_space(description.get_text(" ", strip=True))
+        record = {"title": title, "organization": "UNICEF", "countryList": [],
+                  "deadline": None, "type": "Consultancy / vacancy",
+                  "link": link.replace("http://", "https://", 1),
+                  "source": "UNICEF U-Report", "scope": scope}
+        if matches_keywords({**record, "type": scope}, keywords):
+            items.append(record)
+    if probe is not None:
+        probe.record(fetched=len(headings), parsed=parsed)
+    if not parsed:
+        raise ValueError("UNICEF U-Report returned no recognizable listings")
     return items
 
 
