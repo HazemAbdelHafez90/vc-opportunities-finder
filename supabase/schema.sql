@@ -78,6 +78,16 @@ alter table public.opportunities
   add constraint opportunities_status_check
   check (status in ('open', 'expired', 'stale'));
 
+create table if not exists public.opportunity_feedback (
+  id uuid primary key default gen_random_uuid(),
+  opportunity_id uuid not null references public.opportunities(id) on delete cascade,
+  reporter_email text not null,
+  comment text not null default '',
+  created_at timestamptz not null default now()
+);
+create index if not exists opportunity_feedback_created_at_idx on public.opportunity_feedback (created_at desc);
+alter table public.opportunity_feedback enable row level security;
+
 create table if not exists public.sync_runs (
   id uuid primary key default gen_random_uuid(),
   started_at timestamptz not null default now(),

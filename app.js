@@ -213,6 +213,8 @@ missedTab.addEventListener("click", () => setActiveTab("missed"));
 deskViewButton.addEventListener("click", () => setActiveTab(lastDeskTab));
 insightsViewButton.addEventListener("click", () => setActiveTab("insights"));
 reevaluateButton.addEventListener("click", handleReevaluateHistory);
+document.querySelector("#feedback-load").addEventListener("click", loadOpportunityFeedback);
+document.querySelector("#detail-feedback").addEventListener("click", () => reportIrrelevant(selectedOpportunityId));
 insightsMarketToggles.forEach((button) => {
   button.addEventListener("click", () => {
     insightsMarketFilter = button.dataset.marketFilter === "cold" ? "cold" : "all";
@@ -1853,6 +1855,7 @@ function renderTable(opportunities) {
           <td data-label="Deadline"><span class="deadline-cell deadline-cell--${deadlineMeta.tone}">${escapeHtml(deadlineMeta.label)}</span></td>
           <td data-label="Status"><span class="status-badge status-badge--${getStatusTone(opportunity)}">${safeStatus}</span></td>
           <td data-label="Link">
+            <button type="button" class="result-link result-link--button" data-feedback-id="${safeId}" data-stop-row-open="true">Report irrelevant</button>
             ${
               safeLink
                 ? `<a class="result-link result-link--button" href="${safeLink}" target="_blank" rel="noreferrer" data-stop-row-open="true"><svg class="icon" aria-hidden="true"><use href="#i-external"></use></svg><span>Open</span></a>`
@@ -1947,6 +1950,7 @@ function renderCards(opportunities) {
           </dl>
 
           <div class="opportunity-card__footer">
+            <button type="button" class="result-link result-link--button" data-feedback-id="${safeId}" data-stop-row-open="true">Report irrelevant</button>
             ${
               safeLink
                 ? `<a class="result-link result-link--button" href="${safeLink}" target="_blank" rel="noreferrer" data-stop-row-open="true"><svg class="icon" aria-hidden="true"><use href="#i-external"></use></svg><span>Open</span></a>`
@@ -3443,6 +3447,11 @@ function debugLog(event, payload) {
 }
 
 function handleOpportunityListClick(event) {
+  const feedbackButton = event.target.closest("[data-feedback-id]");
+  if (feedbackButton) {
+    reportIrrelevant(feedbackButton.dataset.feedbackId);
+    return;
+  }
   if (event.target.closest("[data-stop-row-open='true']")) {
     return;
   }
@@ -3453,6 +3462,47 @@ function handleOpportunityListClick(event) {
   }
 
   openDetailModal(row.getAttribute("data-opportunity-id"));
+}
+
+async function reportIrrelevant(id) {
+  if (!id) return;
+  const comment = window.prompt("Why is this opportunity irrelevant? (Optional)", "");
+  if (comment === null) return;
+  if (comment.length > 1000) {
+    setMessage("Feedback must be 1,000 characters or fewer.", "error");
+    return;
+  }
+  try {
+    const response = await fetchWithAuth("/api/opportunity-feedback", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id, comment }),
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(data.error || "Could not save feedback.");
+    window.alert("Feedback saved. Thank you!");
+  } catch (error) {
+    window.alert(error.message || "Could not save feedback.");
+  }
+}
+
+async function loadOpportunityFeedback() {
+  const results = document.querySelector("#feedback-results");
+  results.textContent = "Loading feedback…";
+  try {
+    const response = await fetchWithAuth("/api/opportunity-feedback");
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || "Could not load feedback.");
+    results.innerHTML = data.feedback.length ? data.feedback.map((entry) => {
+      const item = entry.opportunities || {};
+      const title = escapeHtml(item.title || "Opportunity");
+      const note = escapeHtml(entry.comment || "No explanation provided");
+      const url = /^https?:\/\//i.test(item.link || "") ? escapeAttribute(item.link) : "";
+      const titleDisplay = url ? `<a href="${url}" target="_blank" rel="noreferrer">${title}</a>` : title;
+      return `<p><strong>${titleDisplay}</strong> · ${escapeHtml(item.source || "Source")}<br>${note}<br><small>${escapeHtml(entry.reporter_email)} · ${escapeHtml(formatCompactDate(entry.created_at))}</small></p>`;
+    }).join("") : "No feedback yet.";
+  } catch (error) {
+    results.textContent = error.message || "Could not load feedback.";
+  }
 }
 
 function sanitizeOpportunityTitle(title) {

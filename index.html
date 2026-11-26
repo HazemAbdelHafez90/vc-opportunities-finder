@@ -541,6 +541,13 @@
             <p id="insights-status" class="insights-status">Loading insights.</p>
 
             <div id="insights-body" class="insights-body" hidden>
+              <section class="insights-block" aria-labelledby="feedback-title">
+                <div class="insights-block__head reevaluate-head">
+                  <div><h3 id="feedback-title">Irrelevant opportunity feedback</h3><p class="insights-block__note">Recent reports from the team, including optional explanations.</p></div>
+                  <button id="feedback-load" class="primary-button primary-button--small" type="button">Load feedback</button>
+                </div>
+                <div id="feedback-results" class="reevaluate-results" aria-live="polite"></div>
+              </section>
               <section class="insights-block" aria-labelledby="reevaluate-title">
                 <div class="insights-block__head reevaluate-head">
                   <div>
@@ -919,6 +926,7 @@
           </p>
 
           <div class="detail-modal__buttons">
+            <button id="detail-feedback" class="detail-secondary-button" type="button">Report irrelevant</button>
             <button id="detail-action-save" class="detail-primary-button" type="button">
               Save changes
             </button>
