@@ -541,6 +541,13 @@
             <p id="insights-status" class="insights-status">Loading insights.</p>
 
             <div id="insights-body" class="insights-body" hidden>
+              <section class="insights-block" aria-labelledby="export-analysis-title">
+                <div class="insights-block__head reevaluate-head">
+                  <div><h3 id="export-analysis-title">Export for fit analysis</h3><p class="insights-block__note">Download opportunities, team feedback, and available document text for review.</p></div>
+                  <button id="export-analysis" class="primary-button primary-button--small" type="button">Download analysis data</button>
+                </div>
+                <p id="export-analysis-status" class="insights-status" aria-live="polite"></p>
+              </section>
               <section class="insights-block" aria-labelledby="feedback-title">
                 <div class="insights-block__head reevaluate-head">
                   <div><h3 id="feedback-title">Irrelevant opportunity feedback</h3><p class="insights-block__note">Recent reports from the team, including optional explanations.</p></div>
@@ -745,6 +752,7 @@
             <h2 id="detail-title">Opportunity</h2>
           </div>
 
+          <p id="experimental-fit-summary" hidden></p>
           <div class="detail-modal__meta-row">
             <span id="detail-fit" class="detail-badge detail-badge--fit">0% Low fit</span>
             <span id="detail-status" class="detail-badge detail-badge--status">Live</span>

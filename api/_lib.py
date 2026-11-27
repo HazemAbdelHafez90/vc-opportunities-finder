@@ -1706,6 +1706,7 @@ def escape_html(value: str) -> str:
 
 
 def serialize_opportunity_row(row: dict[str, Any]) -> dict[str, Any]:
+    from lib.fit_assessment import assess
     matched_sources = normalize_sources(row.get("matched_sources"))
     action_status = normalize_action_status(row.get("action_status"))
     missed_reason = normalize_action_reason(row.get("action_reason"), row.get("action_status"), row.get("status"))
@@ -1722,6 +1723,7 @@ def serialize_opportunity_row(row: dict[str, Any]) -> dict[str, Any]:
         "source": row.get("source") or "Source",
         "sourceList": matched_sources or [row.get("source") or "Source"],
         "sourceCount": len(matched_sources or [row.get("source") or "Source"]),
+        "experimentalFit": assess(row),
         "fitScore": row.get("fit_score") or 0,
         "fitLabel": row.get("fit_label") or "Low fit",
         "fitReasons": row.get("fit_reasons") or [],
@@ -2340,7 +2342,7 @@ def build_reliefweb_payload(keywords: list[str], limit: int = RELIEFWEB_RESULT_L
             ],
         },
         "fields": {
-            "include": ["title", "source", "url", "url_alias", "date.closing", "type", "country"],
+            "include": ["title", "body", "source", "url", "url_alias", "date.closing", "type", "country"],
         },
     }
 
@@ -3961,6 +3963,16 @@ FIT_IT_PENALTY = 30
 FIT_CORPORATE_COMMS_PENALTY = 30
 FIT_FIELD_STORY_WEIGHT = 12
 
+# General multimedia and social media can describe many activities besides
+# producing photographs or films. Require specific production evidence for a
+# medium or high visual-production score.
+FIT_PRODUCTION_EVIDENCE_TERMS = [
+    "photo", "photography", "photographer", "photographic", "photojournalism",
+    "video", "videography", "videographer", "film", "filming", "filmmaking",
+    "documentary", "visual storytelling", "audiovisual", "audio visual",
+    "audiovisuelle", "animation", "broadcast",
+]
+
 FIT_VISUAL_TERMS = [
     "video",
     "photo",
@@ -4223,7 +4235,7 @@ def get_fit_analysis(opportunity: dict[str, Any]) -> dict[str, Any]:
 
     if matches_any_fit_term(haystack, FIT_VISUAL_TERMS):
         score += FIT_VISUAL_WEIGHT
-        reasons.append("Strong photography, videography, documentary, or multimedia keywords")
+        reasons.append("Photography, video, documentary, or multimedia keywords")
     if matches_any_fit_term(haystack, FIT_MEDIA_TERMS):
         score += FIT_MEDIA_WEIGHT
         reasons.append("Related storytelling, communications, or media language")
@@ -4246,6 +4258,10 @@ def get_fit_analysis(opportunity: dict[str, Any]) -> dict[str, Any]:
     if matches_any_fit_term(haystack, FIT_INDIVIDUAL_TERMS):
         score -= FIT_INDIVIDUAL_PENALTY
         reasons.append("Penalty for an individual hire: staff post, internship, or named consultant")
+    elif (matches_any_fit_term(haystack, ["roster recruitment", "roster of qualified candidates", "consultant roster"])
+          and not matches_any_fit_term(haystack, ["firm", "agency", "company", "service provider", "production house"])):
+        score -= FIT_INDIVIDUAL_PENALTY
+        reasons.append("Penalty for a roster recruiting individual candidates")
     if matches_any_fit_term(haystack, FIT_HARDWARE_TERMS):
         score -= FIT_HARDWARE_PENALTY
         reasons.append("Penalty for equipment supply or installation rather than production")
@@ -4260,6 +4276,9 @@ def get_fit_analysis(opportunity: dict[str, Any]) -> dict[str, Any]:
         reasons.append("Penalty for corporate communications, event, or promotional work rather than field storytelling")
 
     normalized = max(0, min(100, score))
+    if not matches_any_fit_term(haystack, FIT_PRODUCTION_EVIDENCE_TERMS):
+        normalized = min(normalized, FIT_MEDIUM_SCORE - 1)
+        reasons.append("No specific photography, video, film, or audiovisual production evidence")
     if not scope_visible:
         normalized = min(normalized, FIT_HIGH_SCORE - 1)
         reasons.append("Scope not visible in the public notice")

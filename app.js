@@ -214,6 +214,7 @@ deskViewButton.addEventListener("click", () => setActiveTab(lastDeskTab));
 insightsViewButton.addEventListener("click", () => setActiveTab("insights"));
 reevaluateButton.addEventListener("click", handleReevaluateHistory);
 document.querySelector("#feedback-load").addEventListener("click", loadOpportunityFeedback);
+document.querySelector("#export-analysis").addEventListener("click", exportAnalysisData);
 document.querySelector("#detail-feedback").addEventListener("click", () => reportIrrelevant(selectedOpportunityId));
 insightsMarketToggles.forEach((button) => {
   button.addEventListener("click", () => {
@@ -3505,6 +3506,33 @@ async function loadOpportunityFeedback() {
   }
 }
 
+async function exportAnalysisData() {
+  const button = document.querySelector("#export-analysis");
+  const status = document.querySelector("#export-analysis-status");
+  button.disabled = true;
+  status.textContent = "Preparing download…";
+  try {
+    const response = await fetchWithAuth("/api/export-analysis");
+    if (!response.ok) {
+      const data = await response.json();
+      throw new Error(data.error || "Could not prepare the export.");
+    }
+    const url = URL.createObjectURL(await response.blob());
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = "opportunities-analysis.json";
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
+    status.textContent = "Download ready. Document text is included where available.";
+  } catch (error) {
+    status.textContent = error.message || "Could not prepare the export.";
+  } finally {
+    button.disabled = false;
+  }
+}
+
 function sanitizeOpportunityTitle(title) {
   return String(title || "Opportunity")
     .replace(/\bopen in a new window\b/gi, "")
@@ -3597,6 +3625,12 @@ function openDetailModal(opportunityId) {
   detailTitleLink.hidden = !opportunity.link;
   detailFit.className = `detail-badge detail-badge--fit detail-badge--${fitDescriptor.tone}`;
   detailFit.textContent = fitDescriptor.label;
+  const comparison = document.querySelector("#experimental-fit-summary");
+  const assessment = opportunity.experimentalFit;
+  comparison.hidden = !assessment;
+  comparison.textContent = assessment
+    ? `Experimental assessment · Visual production: ${assessment.visualProduction} · FairConsent: ${assessment.fairconsent} · Eligibility: ${assessment.eligibility} · Evidence: ${assessment.confidence}. ${assessment.visualReason}`
+    : "";
   detailPositionBadge.className = `position-badge position-badge--${positionDescriptor.tone}`;
   detailPositionBadge.textContent = positionDescriptor.label;
   // Most tenders have no country or client evidence at all. Collapsing those panels to a

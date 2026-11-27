@@ -18,7 +18,7 @@ MAX_DOCUMENTS = 3
 MAX_PAGES = 30
 MAX_TEXT = 12000
 MAX_ANALYSIS_TEXT = 120000
-EXTRACTION_VERSION = 3
+EXTRACTION_VERSION = 4
 SOURCE_HOSTS = {
     "UNGM": {"www.ungm.org", "ungm.org"},
     "UNDP Procurement": {"procurement-notices.undp.org", "www.undp.org", "undp.org"},
@@ -46,6 +46,14 @@ FIT_EVIDENCE_RE = re.compile(
     r"image.{0,30}consent|consent.{0,30}(?:image|photo|visual|media|filming)|"
     r"supply (?:of )?(?:cameras?|equipment)|video surveillance)\b", re.I
 )
+
+def document_priority(candidate):
+    name = candidate[0].lower()
+    if GUIDANCE_NAME_RE.search(name):
+        return 2
+    if re.search(r"terms? of reference|\btor\b|scope|specification|statement of work|\brfp\b|\brfq\b", name):
+        return 0
+    return 1
 
 
 def allowed_url(url, hosts):
@@ -188,6 +196,12 @@ def read_source_documents(item, *, headers, ssl_context, timeout=5, stop_at=None
         # Exclude site-wide navigation and footer links from the notice's documents.
         for node in soup.select("nav, header, footer"):
             node.decompose()
+        if not item.get("scope"):
+            description = soup.select_one('[itemprop="description"], .job-description, #noticeDescription')
+            if description:
+                extracted = description.get_text(" ", strip=True)
+                if len(extracted) >= 80:
+                    item["scope"] = extracted[:MAX_ANALYSIS_TEXT]
         for anchor in soup.select("a[href]"):
             href = anchor.get("href") or ""
             name = anchor.get_text(" ", strip=True) or parse.unquote(parse.urlsplit(href).path.rsplit("/", 1)[-1])
@@ -198,7 +212,7 @@ def read_source_documents(item, *, headers, ssl_context, timeout=5, stop_at=None
             candidates.append((doc.get("name") or "Tender document", doc["url"]))
     documents, seen = [], set()
     omitted = False
-    for name, url in candidates:
+    for name, url in sorted(candidates, key=document_priority):
         if url in seen:
             continue
         seen.add(url)

@@ -67,6 +67,21 @@ class FitHaystackTests(unittest.TestCase):
 
 
 class FitScoreTests(unittest.TestCase):
+    def test_digital_media_candidate_roster_is_not_high_fit(self):
+        item = opportunity(
+            "Vacancy Announcement: Roster for Digital and Social Media, Phnom Penh, Cambodia",
+            organization="UNICEF", notice_type="Consultancy / vacancy",
+            scope="UNICEF Cambodia is establishing a consultant roster to support digital campaigns, content creation, social media management, multimedia storytelling, analytics, and audience engagement. This is a roster recruitment of qualified candidates.",
+        )
+        result = get_fit_analysis(item)
+        self.assertLess(result["score"], FIT_MEDIUM_SCORE)
+        self.assertIn("Penalty for a roster recruiting individual candidates", result["reasons"])
+        self.assertIn("No specific photography, video, film, or audiovisual production evidence", result["reasons"])
+
+    def test_generic_multimedia_firm_is_not_automatically_high_fit(self):
+        item = opportunity("RFP for multimedia storytelling agency", organization="UNICEF", scope="Digital campaigns and social media management.")
+        self.assertLess(get_fit_analysis(item)["score"], FIT_MEDIUM_SCORE)
+
     def test_document_scope_contributes_to_visual_fit(self):
         item = opportunity("RFP for creative services", organization="UNDP", notice_type="Request for proposal")
         baseline = get_fit_analysis(item)
