@@ -17,8 +17,8 @@ import xml.etree.ElementTree as ET
 
 from bs4 import BeautifulSoup
 
-from api.client_warmth import get_client_warmth, normalize_lookup_key
-from api.fairpicture_position import get_fairpicture_position
+from lib.client_warmth import get_client_warmth, normalize_lookup_key
+from lib.fairpicture_position import get_fairpicture_position
 
 try:
     import certifi
@@ -42,6 +42,7 @@ FIND_A_TENDER_RELEASES_URL = "https://www.find-tender.service.gov.uk/api/1.0/ocd
 FIND_A_TENDER_NOTICE_PAGE_URL = "https://www.find-tender.service.gov.uk/Notice"
 EEAS_TENDERS_URL = "https://www.eeas.europa.eu/eeas/tenders_en"
 FAIRTRADE_OPPORTUNITIES_URL = "https://www.fairtrade.net/en/about/opportunities.html"
+SIMAP_PROJECT_SEARCH_URL = "https://www.simap.ch/api/publications/v2/project/project-search"
 CAF_TENDER_INDEX_URLS = [
     "https://www.cafonline.com/inside-caf/about-us/tenders/tenders-tab/",
     "https://www.cafonline.com/en/inside-caf/about-us/tenders/tenders-tab/",
@@ -65,6 +66,12 @@ DEFAULT_KEYWORDS = [
     "video production",
     "content production",
     "visual storytelling",
+    "visual consent",
+    "photo consent",
+    "model release",
+    "image rights",
+    "consent management",
+    "consent platform",
 ]
 RELIEFWEB_OPPORTUNITY_TYPES = ["Tender/RFPs/EOIs", "Consultancy"]
 RELIEFWEB_RESULT_LIMIT = 50
@@ -84,6 +91,8 @@ MANAGED_SOURCES = [
     "Find a Tender",
     "EEAS",
     "Fairtrade International",
+    "SIMAP",
+    "UNICEF U-Report",
 ]
 
 # Retired: still shown, no longer fetched. ICIMOD contributed one tender in eight
@@ -104,7 +113,8 @@ SOURCE_PRIORITY = {
     "TED": 8,
     "Find a Tender": 9,
     "EEAS": 10,
-    "Fairtrade International": 11,
+    "SIMAP": 11,
+    "Fairtrade International": 12,
 }
 # A gateway answering for a server it could not reach -- not an answer about our
 # request, and worth one more attempt before calling the source down.
@@ -1014,6 +1024,27 @@ def run_refresh_sync(*, triggered_by: str = "manual") -> dict[str, Any]:
         live_items, source_results = fetch_live_items(DEFAULT_APPNAME, DEFAULT_KEYWORDS)
         now_iso = datetime.now(timezone.utc).isoformat()
         existing_rows = get_existing_rows()
+        from lib.tender_documents import EXTRACTION_VERSION, apply_document_deadline, enrich_documents
+
+        cached_documents = {
+            row.get("link"): row.get("raw_payload") or {}
+            for row in existing_rows if row.get("link")
+        }
+        for item in live_items:
+            cached = cached_documents.get(item.get("link"), {})
+            checked_at = parse_date(cached.get("documentsCheckedAt"))
+            if cached.get("documentStatus"):
+                item["documents"] = cached.get("documents") or []
+                item["documentsCheckedAt"] = cached.get("documentsCheckedAt")
+                item["documentExtractionVersion"] = cached.get("documentExtractionVersion")
+                item["documentStatus"] = (
+                    "checked" if cached.get("documentStatus") == "checked" and checked_at
+                    and cached.get("documentExtractionVersion") == EXTRACTION_VERSION
+                    and datetime.now(timezone.utc) - checked_at < timedelta(days=1) else "pending"
+                )
+        enrich_documents(live_items, headers=DEFAULT_HEADERS, ssl_context=SSL_CONTEXT)
+        for item in live_items:
+            apply_document_deadline(item)
         existing_rows, collapsed_duplicate_count = collapse_existing_duplicates(existing_rows)
         open_rows = [to_db_row(item, now_iso) for item in live_items]
         existing_by_key = {
@@ -1097,7 +1128,7 @@ def run_refresh_sync(*, triggered_by: str = "manual") -> dict[str, Any]:
         # monitoring can never fail a sync that actually worked.
         health_summary: dict[str, Any] = {"evaluated": 0, "skippedReason": None}
         try:
-            from api.source_monitor import evaluate_sources_after_run
+            from lib.source_monitor import evaluate_sources_after_run
 
             health_summary = evaluate_sources_after_run(
                 sync_run["id"], source_results, now_iso
@@ -1119,7 +1150,7 @@ def run_refresh_sync(*, triggered_by: str = "manual") -> dict[str, Any]:
 
         heartbeat = {"configured": False, "pinged": False}
         try:
-            from api.source_monitor import ping_heartbeat
+            from lib.source_monitor import ping_heartbeat
 
             # "Did the daily job run", not "was every source healthy" -- a single
             # flaky source must not make the uptime monitor cry wolf about a run
@@ -1161,7 +1192,7 @@ def get_existing_rows() -> list[dict[str, Any]]:
                 "id,source,source_item_id,canonical_key,matched_sources,status,deadline,first_seen_at,new_notification_sent_at,"
                 "expiry_notification_sent_at,expiry_notification_sent_days,title,organization,countries,"
                 "type,link,fit_score,fit_label,fit_reasons,action_status,action_reason,action_notes,action_taken_at,"
-                "last_seen_at,last_synced_at,expired_notification_sent_at"
+                "last_seen_at,last_synced_at,expired_notification_sent_at,raw_payload"
             ),
             "source": in_filter(MANAGED_SOURCES),
         },
@@ -1676,9 +1707,12 @@ def escape_html(value: str) -> str:
 
 
 def serialize_opportunity_row(row: dict[str, Any]) -> dict[str, Any]:
+    from lib.fit_assessment import assess
     matched_sources = normalize_sources(row.get("matched_sources"))
     action_status = normalize_action_status(row.get("action_status"))
     missed_reason = normalize_action_reason(row.get("action_reason"), row.get("action_status"), row.get("status"))
+    raw = row.get("raw_payload") if isinstance(row.get("raw_payload"), dict) else {}
+    fit_input = {**raw, "title": row.get("title") or raw.get("title"), "organization": row.get("organization") or raw.get("organization"), "type": row.get("type") or raw.get("type")}
     return {
         "id": row.get("id"),
         "title": row.get("title") or "Untitled opportunity",
@@ -1690,10 +1724,16 @@ def serialize_opportunity_row(row: dict[str, Any]) -> dict[str, Any]:
         "source": row.get("source") or "Source",
         "sourceList": matched_sources or [row.get("source") or "Source"],
         "sourceCount": len(matched_sources or [row.get("source") or "Source"]),
+        "experimentalFit": assess(row),
         "fitScore": row.get("fit_score") or 0,
         "fitLabel": row.get("fit_label") or "Low fit",
         "fitReasons": row.get("fit_reasons") or [],
         "scopeVisible": bool((row.get("raw_payload") or {}).get("scopeVisible")),
+        "documents": (row.get("raw_payload") or {}).get("documents") or [],
+        "documentStatus": (row.get("raw_payload") or {}).get("documentStatus"),
+        "deadlineFromDocument": bool((row.get("raw_payload") or {}).get("deadlineFromDocument")),
+        "documentFitEvidence": document_fit_evidence(fit_input)[:8],
+        "fairconsentFit": get_fairconsent_fit(fit_input),
         "fairpicturePosition": get_fairpicture_position(row.get("countries") or []),
         "clientWarmth": get_client_warmth(row.get("organization"), row.get("link")),
         "actionStatus": action_status,
@@ -2183,6 +2223,8 @@ def fetch_live_items(appname: str, keywords: list[str]) -> tuple[list[dict[str, 
         ("Find a Tender", fetch_find_a_tender_notices, (keywords,), {}),
         ("EEAS", fetch_eeas_tenders, (keywords,), {}),
         ("Fairtrade International", fetch_fairtrade_opportunities, (keywords,), {}),
+        ("SIMAP", fetch_simap_tenders, (keywords,), {}),
+        ("UNICEF U-Report", fetch_unicef_ureport, (keywords,), {}),
     ]
 
     if appname:
@@ -2208,7 +2250,7 @@ def fetch_live_items(appname: str, keywords: list[str]) -> tuple[list[dict[str, 
 
 
 def fetch_source_safely(source_name: str, fetcher, *args, **kwargs) -> dict[str, Any]:
-    from api.source_health import summarize_item_quality
+    from lib.source_health import summarize_item_quality
 
     probe = SourceProbe()
     started_at = datetime.now(timezone.utc)
@@ -2301,7 +2343,7 @@ def build_reliefweb_payload(keywords: list[str], limit: int = RELIEFWEB_RESULT_L
             ],
         },
         "fields": {
-            "include": ["title", "source", "url", "url_alias", "date.closing", "type", "country"],
+            "include": ["title", "body", "source", "url", "url_alias", "date.closing", "type", "country"],
         },
     }
 
@@ -2496,7 +2538,8 @@ def extract_ungm_reported_total(html: str) -> int | None:
 
 
 def fetch_ungm_notices(keywords: list[str], probe: SourceProbe | None = None) -> list[dict]:
-    search_terms = list(dict.fromkeys(keywords[:5] or ["video"]))
+    extra_consent_terms = [term for term in ("visual consent", "model release", "consent management") if term in keywords]
+    search_terms = list(dict.fromkeys((keywords[:5] or ["video"]) + extra_consent_terms))
     verification_headers = fetch_ungm_verification_headers()
     deduped = {}
 
@@ -2809,19 +2852,54 @@ def fetch_eeas_tenders(keywords: list[str], probe: SourceProbe | None = None) ->
                 "scope": card_text,
             }
             parsed += 1
-            if not matches_keywords({**record, "type": f"Tender {card_text}"}, keywords):
+            if not matches_keywords({**record, "type": f"Tender {card_text}"}, keywords) and not re.search(r"media|communication|storytelling", card_text, re.I):
                 continue
-            detail = BeautifulSoup(request_text(url, probe=probe), "html.parser")
+            try:
+                detail = BeautifulSoup(request_text(url, probe=probe), "html.parser")
+            except (OSError, RuntimeError):
+                detail = BeautifulSoup("", "html.parser")
             content_node = detail.select_one("main") or detail.select_one("article") or detail.body or detail
             content = compact_space(content_node.get_text(" ", strip=True))
             deadline = extract_source_deadline(content) or deadline
             if deadline and not is_open_deadline(deadline):
                 continue
             record["deadline"] = deadline
-            record["scope"] = content or card_text
-            items.append(record)
+            record["scope"] = compact_space(f"{card_text} {content}")
+            if matches_keywords({**record, "type": record["scope"]}, keywords):
+                items.append(record)
     if probe is not None:
         probe.record(fetched=fetched, parsed=parsed)
+    return items
+
+
+def fetch_unicef_ureport(keywords: list[str], probe: SourceProbe | None = None) -> list[dict]:
+    url = "https://ethiopia.ureport.in/jobs/"
+    soup = BeautifulSoup(request_text(url, probe=probe), "html.parser")
+    headings = soup.select("div.text-2xl")
+    items = []
+    parsed = 0
+    for heading in headings:
+        title = compact_space(heading.get_text(" ", strip=True))
+        description = heading.find_next_sibling("div", class_="text")
+        link_box = description.find_next_sibling("div") if description else None
+        anchor = link_box.find("a", href=True) if link_box else None
+        if not title or not anchor:
+            continue
+        link = anchor["href"]
+        if not re.fullmatch(r"https?://careers\.pageuppeople\.com/671/cw/en-us/job/\d+/?", link):
+            continue
+        parsed += 1
+        scope = compact_space(description.get_text(" ", strip=True))
+        record = {"title": title, "organization": "UNICEF", "countryList": [],
+                  "deadline": None, "type": "Consultancy / vacancy",
+                  "link": link.replace("http://", "https://", 1),
+                  "source": "UNICEF U-Report", "scope": scope}
+        if matches_keywords({**record, "type": scope}, keywords):
+            items.append(record)
+    if probe is not None:
+        probe.record(fetched=len(headings), parsed=parsed)
+    if not parsed:
+        raise ValueError("UNICEF U-Report returned no recognizable listings")
     return items
 
 
@@ -2873,6 +2951,85 @@ def fetch_fairtrade_opportunities(
     if probe is not None:
         probe.record(fetched=fetched, parsed=parsed)
     return items
+
+
+def fetch_simap_tenders(keywords: list[str], probe: SourceProbe | None = None) -> list[dict]:
+    # SIMAP's public search API is intentionally queried with broad visual-media
+    # terms: its public UI does not require an account, and the API returns the
+    # source record fields used below without rewriting their notice text.
+    terms = ["video", "photography", "film", "media", "communication", "content"]
+    items: list[dict] = []
+    seen: set[str] = set()
+    fetched = parsed = 0
+    for term in terms:
+        query = parse.urlencode({"search": term, "orderAddressCountryOnlySwitzerland": "true"})
+        payload = json.loads(request_text(f"{SIMAP_PROJECT_SEARCH_URL}?{query}", probe=probe))
+        rows = extract_simap_rows(payload)
+        fetched += len(rows)
+        for row in rows:
+            record = parse_simap_project(row)
+            if not record:
+                continue
+            key = record.get("link") or record["title"]
+            if key in seen:
+                continue
+            seen.add(key)
+            parsed += 1
+            if record["deadline"] and not is_open_deadline(record["deadline"]):
+                continue
+            if matches_keywords({**record, "type": f"{record['type']} {record.get('scope', '')}"}, keywords):
+                items.append(record)
+    if probe is not None:
+        probe.record(fetched=fetched, parsed=parsed)
+    return items
+
+
+def extract_simap_rows(payload: Any) -> list[dict]:
+    if isinstance(payload, list):
+        return [row for row in payload if isinstance(row, dict)]
+    if not isinstance(payload, dict):
+        return []
+    for key in ("content", "results", "items", "projects", "publications", "entries", "data"):
+        value = payload.get(key)
+        if isinstance(value, list):
+            return [row for row in value if isinstance(row, dict)]
+        if isinstance(value, dict):
+            nested = extract_simap_rows(value)
+            if nested:
+                return nested
+    return []
+
+
+def parse_simap_project(row: dict) -> dict | None:
+    def first(*keys: str) -> str:
+        for key in keys:
+            value = row.get(key)
+            if isinstance(value, dict):
+                value = value.get("de") or value.get("en") or value.get("fr") or value.get("it") or next(iter(value.values()), "")
+            if value is not None and not isinstance(value, (dict, list)) and compact_space(str(value)):
+                return compact_space(str(value))
+        return ""
+
+    title = first("title", "projectTitle", "projectName", "publicationTitle", "name")
+    if not title:
+        return None
+    deadline_raw = first("offerDeadline", "submissionDeadline", "deadline", "closingDate", "deadlineDate", "offerSubmissionDeadline")
+    parsed_deadline = parse_date(deadline_raw) if deadline_raw else None
+    deadline = parsed_deadline.date().isoformat() if parsed_deadline else None
+    url = first("url", "publicUrl", "detailUrl", "publicationUrl", "link")
+    url = parse.urljoin("https://www.simap.ch/en", url) if url else "https://www.simap.ch/en"
+    organization = first("organization", "contractingAuthority", "orderer", "buyerName", "client") or "Swiss public authority"
+    scope = first("description", "shortDescription", "scope", "projectDescription", "summary")
+    return {
+        "title": title,
+        "organization": organization,
+        "countryList": ["Switzerland"],
+        "deadline": deadline,
+        "type": first("publicationType", "noticeType", "type") or "Public procurement",
+        "link": url,
+        "source": "SIMAP",
+        "scope": scope,
+    }
 
 
 def extract_source_deadline(value: str) -> str | None:
@@ -3731,6 +3888,10 @@ def parse_find_a_tender_release(release: dict[str, Any]) -> dict[str, Any] | Non
         "link": find_a_tender_link(documents, notice_id),
         "source": "Find a Tender",
         "scope": compact_space(String(tender.get("description"))),
+        "documentLinks": [
+            {"name": compact_space(String(doc.get("title") or doc.get("description"))), "url": compact_space(String(doc.get("url")))}
+            for doc in documents if isinstance(doc, dict) and doc.get("url")
+        ],
     }
 
 
@@ -3800,6 +3961,16 @@ FIT_HARDWARE_PENALTY = 45
 FIT_IT_PENALTY = 30
 FIT_CORPORATE_COMMS_PENALTY = 30
 FIT_FIELD_STORY_WEIGHT = 12
+
+# General multimedia and social media can describe many activities besides
+# producing photographs or films. Require specific production evidence for a
+# medium or high visual-production score.
+FIT_PRODUCTION_EVIDENCE_TERMS = [
+    "photo", "photography", "photographer", "photographic", "photojournalism",
+    "video", "videography", "videographer", "film", "filming", "filmmaking",
+    "documentary", "visual storytelling", "audiovisual", "audio visual",
+    "audiovisuelle", "animation", "broadcast",
+]
 
 FIT_VISUAL_TERMS = [
     "video",
@@ -3983,9 +4154,42 @@ def build_fit_haystack(opportunity: dict[str, Any]) -> str:
                 String(opportunity.get("type")),
                 " ".join(opportunity.get("countryList") or []),
                 String(opportunity.get("scope")),
+                " ".join(entry["text"] for entry in document_fit_evidence(opportunity)),
             ]
         )
     )
+
+
+def document_fit_evidence(opportunity: dict[str, Any]) -> list[dict[str, Any]]:
+    evidence = []
+    for document in opportunity.get("documents") or []:
+        if not isinstance(document, dict) or document.get("status") != "read":
+            continue
+        for excerpt in document.get("fitExcerpts") or []:
+            if isinstance(excerpt, dict) and excerpt.get("text"):
+                evidence.append({"document": document.get("name") or "Document", "page": excerpt.get("page"), "text": str(excerpt["text"])[:500]})
+    return evidence[:30]
+
+
+def get_fairconsent_fit(opportunity: dict[str, Any]) -> dict[str, Any]:
+    """Identify image-subject consent, not unrelated cookie or medical consent."""
+    text = build_fit_haystack(opportunity)
+    direct_terms = ["visual consent", "photo consent", "photographic consent", "image consent",
+                    "model release", "image release", "consent to be photographed", "consent to be filmed",
+                    "consent to film", "image rights", "image consent management"]
+    direct = matches_any_fit_term(text, direct_terms)
+    consent = matches_any_fit_term(text, ["consent", "consent management", "informed consent", "release form"])
+    visual = matches_any_fit_term(text, ["photo", "photography", "image", "video", "filming", "visual", "media", "subject", "portrait"])
+    unrelated = matches_any_fit_term(text, ["cookie consent", "cookies", "clinical trial", "patient consent", "medical consent"])
+    product = matches_any_fit_term(text, ["consent management", "consent platform", "consent system", "consent software", "digital consent", "consent records", "consent tracking"])
+    if (direct or (consent and visual)) and not (unrelated and not direct):
+        level = "direct" if product else "potential"
+        label = "Direct opportunity" if product else "Potential add-on"
+        reason = ("Visual consent and a consent-management system are requested." if product
+                  else "Visual work or image rights mentions consent; check whether a consent tool is needed.")
+    else:
+        level, label, reason = "none", "No clear signal", "No clear visual-consent opportunity found in the available text."
+    return {"level": level, "label": label, "reason": reason}
 
 
 def matches_fit_term(haystack: str, term: str) -> bool:
@@ -3998,6 +4202,8 @@ def matches_any_fit_term(haystack: str, terms: list[str]) -> bool:
 
 def is_scope_visible(opportunity: dict[str, Any]) -> bool:
     scope = normalize_lookup_key(String(opportunity.get("scope")))
+    if document_fit_evidence(opportunity):
+        return True
     if not scope:
         return False
 
@@ -4021,10 +4227,14 @@ def get_fit_analysis(opportunity: dict[str, Any]) -> dict[str, Any]:
 
     score = FIT_BASE_SCORE
     reasons = ["Base Fairpicture fit score"]
+    evidence = document_fit_evidence(opportunity)
+    if evidence:
+        names = list(dict.fromkeys(entry["document"] for entry in evidence))
+        reasons.append("Includes matching passages from: " + ", ".join(names[:3]))
 
     if matches_any_fit_term(haystack, FIT_VISUAL_TERMS):
         score += FIT_VISUAL_WEIGHT
-        reasons.append("Strong photography, videography, documentary, or multimedia keywords")
+        reasons.append("Photography, video, documentary, or multimedia keywords")
     if matches_any_fit_term(haystack, FIT_MEDIA_TERMS):
         score += FIT_MEDIA_WEIGHT
         reasons.append("Related storytelling, communications, or media language")
@@ -4047,6 +4257,10 @@ def get_fit_analysis(opportunity: dict[str, Any]) -> dict[str, Any]:
     if matches_any_fit_term(haystack, FIT_INDIVIDUAL_TERMS):
         score -= FIT_INDIVIDUAL_PENALTY
         reasons.append("Penalty for an individual hire: staff post, internship, or named consultant")
+    elif (matches_any_fit_term(haystack, ["roster recruitment", "roster of qualified candidates", "consultant roster"])
+          and not matches_any_fit_term(haystack, ["firm", "agency", "company", "service provider", "production house"])):
+        score -= FIT_INDIVIDUAL_PENALTY
+        reasons.append("Penalty for a roster recruiting individual candidates")
     if matches_any_fit_term(haystack, FIT_HARDWARE_TERMS):
         score -= FIT_HARDWARE_PENALTY
         reasons.append("Penalty for equipment supply or installation rather than production")
@@ -4061,6 +4275,9 @@ def get_fit_analysis(opportunity: dict[str, Any]) -> dict[str, Any]:
         reasons.append("Penalty for corporate communications, event, or promotional work rather than field storytelling")
 
     normalized = max(0, min(100, score))
+    if not matches_any_fit_term(haystack, FIT_PRODUCTION_EVIDENCE_TERMS):
+        normalized = min(normalized, FIT_MEDIUM_SCORE - 1)
+        reasons.append("No specific photography, video, film, or audiovisual production evidence")
     if not scope_visible:
         normalized = min(normalized, FIT_HIGH_SCORE - 1)
         reasons.append("Scope not visible in the public notice")

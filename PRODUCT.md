@@ -10,7 +10,7 @@ Fairpicture operations and business development team. They open Tender Radar onc
 
 ## Product Purpose
 
-Tender Radar is an internal procurement intelligence tool for Fairpicture. It continuously scans ReliefWeb, UNDP Procurement, UNGM, ICIMOD, Welthungerhilfe, and other humanitarian sources, ranks results by fit for visual/documentary work, and presents them in a fast, filterable desk. Success means the team spends less time searching and more time bidding on the right opportunities.
+Tender Radar is an internal procurement intelligence tool for Fairpicture. It continuously scans ReliefWeb, UNDP Procurement, UNGM, Welthungerhilfe, Plan International, CAF, TED, Find a Tender, EEAS, SIMAP, Fairtrade International, and other humanitarian sources, ranks results by fit for visual/documentary work, and presents them in a fast, filterable desk. Success means the team spends less time searching and more time bidding on the right opportunities.
 
 ## Brand Personality
 

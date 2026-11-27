@@ -1350,6 +1350,9 @@ textarea::placeholder {
   justify-content: flex-end;
   gap: 8px;
   flex-wrap: wrap;
+  /* When this group moves to its own flex line, keep it attached to the
+     right edge of the header instead of leaving an empty trailing column. */
+  margin-left: auto;
 }
 
 .auth-user {

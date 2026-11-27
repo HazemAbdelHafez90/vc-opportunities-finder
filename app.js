@@ -144,7 +144,7 @@ const viewCardsButton = document.querySelector("#view-cards");
 const themeLightButton = document.querySelector("#theme-light");
 const themeDarkButton = document.querySelector("#theme-dark");
 const toast = document.querySelector("#toast");
-const DISPLAY_SOURCES = ["ReliefWeb", "UNDP Procurement", "UNGM", "Welthungerhilfe", "Plan International", "CAF", "TED", "Find a Tender", "EEAS", "Fairtrade International"];
+const DISPLAY_SOURCES = ["ReliefWeb", "UNDP Procurement", "UNGM", "Welthungerhilfe", "Plan International", "CAF", "TED", "Find a Tender", "EEAS", "Fairtrade International", "SIMAP", "UNICEF U-Report"];
 const STORAGE_KEYS = {
   theme: "fairpicture-opportunities-theme",
   view: "fairpicture-opportunities-view",
@@ -213,6 +213,9 @@ missedTab.addEventListener("click", () => setActiveTab("missed"));
 deskViewButton.addEventListener("click", () => setActiveTab(lastDeskTab));
 insightsViewButton.addEventListener("click", () => setActiveTab("insights"));
 reevaluateButton.addEventListener("click", handleReevaluateHistory);
+document.querySelector("#feedback-load").addEventListener("click", loadOpportunityFeedback);
+document.querySelector("#export-analysis").addEventListener("click", exportAnalysisData);
+document.querySelector("#detail-feedback").addEventListener("click", () => reportIrrelevant(selectedOpportunityId));
 insightsMarketToggles.forEach((button) => {
   button.addEventListener("click", () => {
     insightsMarketFilter = button.dataset.marketFilter === "cold" ? "cold" : "all";
@@ -1609,7 +1612,12 @@ function filterOpportunities(opportunities, filters) {
       return false;
     }
 
-    if (filters.fit !== "all" && getFitFilterValue(opportunity) !== filters.fit) {
+    const consentLevel = opportunity.fairconsentFit?.level || "none";
+    const matchesFit = filters.fit === "all"
+      || (filters.fit === "fairconsent" && consentLevel !== "none")
+      || (filters.fit === "fairconsent-direct" && consentLevel === "direct")
+      || getFitFilterValue(opportunity) === filters.fit;
+    if (!matchesFit) {
       return false;
     }
 
@@ -1821,6 +1829,8 @@ function renderTable(opportunities) {
       const scopeBadge = opportunity.scopeVisible
         ? ""
         : '<span class="status-badge status-badge--reviewed">Scope not visible</span>';
+      const consentBadge = opportunity.fairconsentFit?.level !== "none" && opportunity.fairconsentFit?.level
+        ? `<span class="status-badge status-badge--reviewed">FairConsent: ${escapeHtml(opportunity.fairconsentFit.label)}</span>` : "";
 
       return `
         <tr class="clickable-row" data-opportunity-id="${safeId}">
@@ -1837,6 +1847,7 @@ function renderTable(opportunities) {
             <p class="opportunity-title" title="${safeTitleAttr}">${safeTitle}</p>
             <small class="opportunity-subline">${safeSecondary}</small>
             ${scopeBadge}
+            ${consentBadge}
           </td>
           <td data-label="Source">
             <span class="source-tag">${safeSource}</span>
@@ -1845,6 +1856,7 @@ function renderTable(opportunities) {
           <td data-label="Deadline"><span class="deadline-cell deadline-cell--${deadlineMeta.tone}">${escapeHtml(deadlineMeta.label)}</span></td>
           <td data-label="Status"><span class="status-badge status-badge--${getStatusTone(opportunity)}">${safeStatus}</span></td>
           <td data-label="Link">
+            <button type="button" class="result-link result-link--button" data-feedback-id="${safeId}" data-stop-row-open="true">Report irrelevant</button>
             ${
               safeLink
                 ? `<a class="result-link result-link--button" href="${safeLink}" target="_blank" rel="noreferrer" data-stop-row-open="true"><svg class="icon" aria-hidden="true"><use href="#i-external"></use></svg><span>Open</span></a>`
@@ -1888,6 +1900,8 @@ function renderCards(opportunities) {
       const scopeBadge = opportunity.scopeVisible
         ? ""
         : '<span class="status-badge status-badge--reviewed">Scope not visible</span>';
+      const consentBadge = opportunity.fairconsentFit?.level !== "none" && opportunity.fairconsentFit?.level
+        ? `<span class="status-badge status-badge--reviewed">FairConsent: ${escapeHtml(opportunity.fairconsentFit.label)}</span>` : "";
 
       return `
         <article class="opportunity-card opportunity-card--${fitTone}${expiringSoon ? " opportunity-card--expiring" : ""}" data-opportunity-id="${safeId}">
@@ -1898,6 +1912,7 @@ function renderCards(opportunities) {
             <div class="opportunity-card__badges">
               <span class="fit-badge fit-badge--${fitTone}">${escapeHtml(getFitBadgeLabel(opportunity))}</span>
               ${scopeBadge}
+              ${consentBadge}
               ${warmthDescriptor.tone === "new" ? "" : renderWarmthBadge(warmthDescriptor)}
               ${renderPositionBadge(positionDescriptor)}
             </div>
@@ -1936,6 +1951,7 @@ function renderCards(opportunities) {
           </dl>
 
           <div class="opportunity-card__footer">
+            <button type="button" class="result-link result-link--button" data-feedback-id="${safeId}" data-stop-row-open="true">Report irrelevant</button>
             ${
               safeLink
                 ? `<a class="result-link result-link--button" href="${safeLink}" target="_blank" rel="noreferrer" data-stop-row-open="true"><svg class="icon" aria-hidden="true"><use href="#i-external"></use></svg><span>Open</span></a>`
@@ -3432,6 +3448,11 @@ function debugLog(event, payload) {
 }
 
 function handleOpportunityListClick(event) {
+  const feedbackButton = event.target.closest("[data-feedback-id]");
+  if (feedbackButton) {
+    reportIrrelevant(feedbackButton.dataset.feedbackId);
+    return;
+  }
   if (event.target.closest("[data-stop-row-open='true']")) {
     return;
   }
@@ -3442,6 +3463,74 @@ function handleOpportunityListClick(event) {
   }
 
   openDetailModal(row.getAttribute("data-opportunity-id"));
+}
+
+async function reportIrrelevant(id) {
+  if (!id) return;
+  const comment = window.prompt("Why is this opportunity irrelevant? (Optional)", "");
+  if (comment === null) return;
+  if (comment.length > 1000) {
+    setMessage("Feedback must be 1,000 characters or fewer.", "error");
+    return;
+  }
+  try {
+    const response = await fetchWithAuth("/api/opportunity-feedback", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id, comment }),
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(data.error || "Could not save feedback.");
+    window.alert("Feedback saved. Thank you!");
+  } catch (error) {
+    window.alert(error.message || "Could not save feedback.");
+  }
+}
+
+async function loadOpportunityFeedback() {
+  const results = document.querySelector("#feedback-results");
+  results.textContent = "Loading feedback…";
+  try {
+    const response = await fetchWithAuth("/api/opportunity-feedback");
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || "Could not load feedback.");
+    results.innerHTML = data.feedback.length ? data.feedback.map((entry) => {
+      const item = entry.opportunities || {};
+      const title = escapeHtml(item.title || "Opportunity");
+      const note = escapeHtml(entry.comment || "No explanation provided");
+      const url = /^https?:\/\//i.test(item.link || "") ? escapeAttribute(item.link) : "";
+      const titleDisplay = url ? `<a href="${url}" target="_blank" rel="noreferrer">${title}</a>` : title;
+      return `<p><strong>${titleDisplay}</strong> · ${escapeHtml(item.source || "Source")}<br>${note}<br><small>${escapeHtml(entry.reporter_email)} · ${escapeHtml(formatCompactDate(entry.created_at))}</small></p>`;
+    }).join("") : "No feedback yet.";
+  } catch (error) {
+    results.textContent = error.message || "Could not load feedback.";
+  }
+}
+
+async function exportAnalysisData() {
+  const button = document.querySelector("#export-analysis");
+  const status = document.querySelector("#export-analysis-status");
+  button.disabled = true;
+  status.textContent = "Preparing download…";
+  try {
+    const response = await fetchWithAuth("/api/export-analysis");
+    if (!response.ok) {
+      const data = await response.json();
+      throw new Error(data.error || "Could not prepare the export.");
+    }
+    const url = URL.createObjectURL(await response.blob());
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = "opportunities-analysis.json";
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
+    status.textContent = "Download ready. Document text is included where available.";
+  } catch (error) {
+    status.textContent = error.message || "Could not prepare the export.";
+  } finally {
+    button.disabled = false;
+  }
 }
 
 function sanitizeOpportunityTitle(title) {
@@ -3536,6 +3625,12 @@ function openDetailModal(opportunityId) {
   detailTitleLink.hidden = !opportunity.link;
   detailFit.className = `detail-badge detail-badge--fit detail-badge--${fitDescriptor.tone}`;
   detailFit.textContent = fitDescriptor.label;
+  const comparison = document.querySelector("#experimental-fit-summary");
+  const assessment = opportunity.experimentalFit;
+  comparison.hidden = !assessment;
+  comparison.textContent = assessment
+    ? `Experimental assessment · Visual production: ${assessment.visualProduction} · FairConsent: ${assessment.fairconsent} · Eligibility: ${assessment.eligibility} · Evidence: ${assessment.confidence}. ${assessment.visualReason}`
+    : "";
   detailPositionBadge.className = `position-badge position-badge--${positionDescriptor.tone}`;
   detailPositionBadge.textContent = positionDescriptor.label;
   // Most tenders have no country or client evidence at all. Collapsing those panels to a
@@ -3558,9 +3653,73 @@ function openDetailModal(opportunityId) {
   detailCountries.textContent = countryLabel;
   detailDeadline.className = `detail-meta-value detail-meta-value--${deadlineMeta.tone}`;
   detailDeadline.innerHTML = `${escapeHtml(deadlineMeta.label)}${deadlineMeta.suffix ? ` <small>${escapeHtml(deadlineMeta.suffix)}</small>` : ""}`;
+  if (opportunity.deadlineFromDocument) {
+    detailDeadline.innerHTML += " <small>Found in a document; verify with the issuer</small>";
+  }
   detailType.textContent = getDetailTypeLabel(opportunity);
   detailAdded.textContent = formatDate(opportunity.addedAt);
   detailSourceMeta.textContent = getOpportunitySourceDetail(opportunity);
+  const consent = opportunity.fairconsentFit || { label: "Not assessed", reason: "No assessment available yet." };
+  document.querySelector("#detail-consent-summary").textContent = `${consent.label} — ${consent.reason}`;
+  const fitEvidence = Array.isArray(opportunity.documentFitEvidence) ? opportunity.documentFitEvidence : [];
+  document.querySelector("#detail-document-fit-panel").hidden = fitEvidence.length === 0;
+  const evidenceList = document.querySelector("#detail-document-fit");
+  evidenceList.replaceChildren();
+  for (const evidence of fitEvidence) {
+    const li = document.createElement("li");
+    li.textContent = `${evidence.text} (${evidence.document}${evidence.page ? `, page ${evidence.page}` : ""})`;
+    evidenceList.append(li);
+  }
+  const documentsPanel = document.querySelector("#detail-documents-panel");
+  const documentsContainer = document.querySelector("#detail-documents");
+  const documents = Array.isArray(opportunity.documents) ? opportunity.documents : [];
+  documentsPanel.hidden = !opportunity.documentStatus;
+  documentsContainer.replaceChildren();
+  if (opportunity.documentStatus === "unavailable" && !documents.length) {
+    documentsContainer.textContent = "Documents could not be checked during the last refresh.";
+  } else if (opportunity.documentStatus === "pending" && !documents.length) {
+    documentsContainer.textContent = "Documents are waiting to be checked in a future refresh.";
+  } else if (!documents.length) {
+    documentsContainer.textContent = "No public documents found on the notice.";
+  } else {
+    const findings = documents.flatMap((doc) => [
+      ...(doc.deadlines || []).map((finding) => ({ ...finding, kind: "Possible submission deadline" })),
+      ...(doc.requirements || []).map((finding) => ({ ...finding, kind: "Possible requirement" })),
+    ]);
+    if (findings.length) {
+      const intro = document.createElement("p");
+      intro.textContent = "Possible deadlines and requirements found in documents. Verify the original text before acting.";
+      documentsContainer.append(intro);
+      const list = document.createElement("ul");
+      for (const finding of findings) {
+        const li = document.createElement("li");
+        li.textContent = `${finding.kind}${finding.date ? `: ${finding.date}` : ""} — ${finding.excerpt} (${finding.document}${finding.page ? `, page ${finding.page}` : ""})`;
+        list.append(li);
+      }
+      documentsContainer.append(list);
+    }
+    for (const doc of documents) {
+      const block = document.createElement("details");
+      const summary = document.createElement("summary");
+      summary.textContent = `${doc.name || "Document"} — ${doc.status === "read" ? "text extracted" : "not readable automatically"}`;
+      block.append(summary);
+      const content = document.createElement("p");
+      content.textContent = doc.text || "Open the original notice to access this document.";
+      content.style.whiteSpace = "pre-wrap";
+      block.append(content);
+      if (doc.truncated) {
+        const notice = document.createElement("small");
+        notice.textContent = "Text is limited to the first 12,000 characters. Open the original notice for the complete document.";
+        block.append(notice);
+      }
+      if (doc.analysisTruncated) {
+        const notice = document.createElement("small");
+        notice.textContent = "The complete file was not checked. Review the original document for more details.";
+        block.append(notice);
+      }
+      documentsContainer.append(block);
+    }
+  }
   detailNotes.value = opportunity.actionNotes || "";
   detailTargetState.value = getDetailTargetState(opportunity);
   detailMissedReason.value = opportunity.missedReason || "";

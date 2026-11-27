@@ -49,6 +49,7 @@ SPARSE_SOURCE_QUIET_BUSINESS_DAYS = {
     "CAF": 90,
     "EEAS": 90,
     "Fairtrade International": 90,
+    "SIMAP": 90,
 }
 HARD_FAIL_HISTORY_RUNS = 30
 INCIDENT_REMINDER_DAYS = 3

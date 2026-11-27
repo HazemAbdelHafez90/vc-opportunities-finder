@@ -144,13 +144,15 @@
             <span class="source-pills__item source-pills__item--live">TED</span>
             <span class="source-pills__item source-pills__item--live">Find a Tender</span>
             <span class="source-pills__item source-pills__item--live">EEAS</span>
+            <span class="source-pills__item source-pills__item--live">SIMAP</span>
             <span class="source-pills__item source-pills__item--live">Fairtrade International</span>
+            <span class="source-pills__item source-pills__item--live">UNICEF U-Report</span>
             <span class="source-pills__item">Aid-LINK</span>
             <span class="source-pills__item">NGOtenders</span>
           </div>
           <div class="auth-stats auth-stage auth-stage--5">
             <div>
-              <strong>10</strong>
+              <strong>11</strong>
               <span>Live sources</span>
             </div>
             <div>
@@ -378,6 +380,8 @@
                     <option value="high">High fit</option>
                     <option value="medium">Medium fit</option>
                     <option value="low">Low fit</option>
+                    <option value="fairconsent">FairConsent signals</option>
+                    <option value="fairconsent-direct">FairConsent direct opportunities</option>
                   </select>
                 </div>
               </details>
@@ -427,6 +431,8 @@
                     <option value="Find a Tender">Find a Tender</option>
                     <option value="EEAS">EEAS</option>
                     <option value="Fairtrade International">Fairtrade International</option>
+                    <option value="SIMAP">SIMAP</option>
+                    <option value="UNICEF U-Report">UNICEF U-Report</option>
                   </select>
                 </div>
               </details>
@@ -535,6 +541,20 @@
             <p id="insights-status" class="insights-status">Loading insights.</p>
 
             <div id="insights-body" class="insights-body" hidden>
+              <section class="insights-block" aria-labelledby="export-analysis-title">
+                <div class="insights-block__head reevaluate-head">
+                  <div><h3 id="export-analysis-title">Export for fit analysis</h3><p class="insights-block__note">Download opportunities, team feedback, and available document text for review.</p></div>
+                  <button id="export-analysis" class="primary-button primary-button--small" type="button">Download analysis data</button>
+                </div>
+                <p id="export-analysis-status" class="insights-status" aria-live="polite"></p>
+              </section>
+              <section class="insights-block" aria-labelledby="feedback-title">
+                <div class="insights-block__head reevaluate-head">
+                  <div><h3 id="feedback-title">Irrelevant opportunity feedback</h3><p class="insights-block__note">Recent reports from the team, including optional explanations.</p></div>
+                  <button id="feedback-load" class="primary-button primary-button--small" type="button">Load feedback</button>
+                </div>
+                <div id="feedback-results" class="reevaluate-results" aria-live="polite"></div>
+              </section>
               <section class="insights-block" aria-labelledby="reevaluate-title">
                 <div class="insights-block__head reevaluate-head">
                   <div>
@@ -613,7 +633,26 @@
           <button id="sources-close" class="ghost-button" type="button">Close</button>
         </div>
         <div id="source-health" class="source-health" hidden></div>
+        <p class="cell-subtext">SIMAP notice data: This is not an official publication. The data published on the www.simap.ch platform are authoritative.</p>
         <div class="blocked-sources">
+          <article class="blocked-source-card">
+            <h3>EEAS Tenders</h3>
+            <p>Public European External Action Service procurement notices. Listings are filtered for visual media and production work.</p>
+            <p class="cell-subtext">Status: live source</p>
+            <a class="result-link" href="https://www.eeas.europa.eu/eeas/tenders_en" target="_blank" rel="noreferrer">Open source</a>
+          </article>
+          <article class="blocked-source-card">
+            <h3>SIMAP</h3>
+            <p>Swiss public procurement notices via the public search API. Review the source notice for authoritative details; Tender Radar's fit and ranking are separate analysis.</p>
+            <p class="cell-subtext">Status: live source</p>
+            <a class="result-link" href="https://www.simap.ch/en" target="_blank" rel="noreferrer">Open source</a>
+          </article>
+          <article class="blocked-source-card">
+            <h3>Fairtrade International</h3>
+            <p>Fairtrade International tenders and RFPs. Vacancies are excluded from the tender feed.</p>
+            <p class="cell-subtext">Status: live source</p>
+            <a class="result-link" href="https://www.fairtrade.net/en/about/opportunities.html" target="_blank" rel="noreferrer">Open source</a>
+          </article>
           <article class="blocked-source-card">
             <h3>Welthungerhilfe Tenders</h3>
             <p>Humanitarian NGO tender page with public listings. This source is now part of the live tender feed and still passes through the same media-focused keyword filter.</p>
@@ -658,8 +697,8 @@
           </article>
           <article class="blocked-source-card">
             <h3>UNICEF Careers</h3>
-            <p>The public jobs site is currently protected by AWS WAF challenge pages for server-side requests, so the Vercel backend cannot fetch it reliably.</p>
-            <p class="cell-subtext">Status: blocked by anti-bot protection</p>
+            <p>UNICEF vacancies are collected via U-Report. Deadlines are unavailable in that feed; check the official careers site. Some older application links may redirect to search.</p>
+            <p class="cell-subtext">Status: U-Report feed</p>
             <a class="result-link" href="https://jobs.unicef.org/careers/" target="_blank" rel="noreferrer">Open source</a>
           </article>
         </div>
@@ -713,6 +752,7 @@
             <h2 id="detail-title">Opportunity</h2>
           </div>
 
+          <p id="experimental-fit-summary" hidden></p>
           <div class="detail-modal__meta-row">
             <span id="detail-fit" class="detail-badge detail-badge--fit">0% Low fit</span>
             <span id="detail-status" class="detail-badge detail-badge--status">Live</span>
@@ -758,6 +798,22 @@
               <dd id="detail-source-meta">—</dd>
             </div>
           </dl>
+
+          <section id="detail-documents-panel" class="position-evidence" hidden>
+            <h3>Tender documents</h3>
+            <div id="detail-documents"></div>
+          </section>
+
+          <section class="position-evidence" aria-labelledby="detail-consent-title">
+            <h3 id="detail-consent-title">FairConsent opportunity</h3>
+            <p id="detail-consent-summary"></p>
+            <p class="cell-subtext">A signal to review, not confirmation that the buyer is procuring FairConsent.</p>
+          </section>
+
+          <section id="detail-document-fit-panel" class="position-evidence" hidden>
+            <h3>Document evidence for fit</h3>
+            <ul id="detail-document-fit"></ul>
+          </section>
 
           <section id="detail-warmth-panel" class="position-evidence" aria-labelledby="detail-warmth-title">
             <div class="position-evidence__header">
@@ -878,6 +934,7 @@
           </p>
 
           <div class="detail-modal__buttons">
+            <button id="detail-feedback" class="detail-secondary-button" type="button">Report irrelevant</button>
             <button id="detail-action-save" class="detail-primary-button" type="button">
               Save changes
             </button>
